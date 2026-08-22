@@ -249,6 +249,25 @@ describe("driving the claude CLI", () => {
     ok(argv.includes(`--resume=${entry.sessionId}`), `expected a resume flag in ${JSON.stringify(argv)}`);
   });
 
+  it("remembers a setting from a group that ran no turn", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const argvFile = join(dir, "argv.json");
+
+    // A group on its own is answered without starting the agent, so this is the
+    // one way a thread's settings change while it still has no session id.
+    const first = start({ dir, args: ["--state-file", stateFile] });
+    await first.waitFor(first.send("[effort=max]", "a"), "effort `max`");
+    await first.end();
+
+    const second = start({ dir, args: ["--state-file", stateFile], env: { CLAUDE_STUB_ARGV_FILE: argvFile } });
+    await second.waitFor(second.send("hello", "b"));
+    await second.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    strictEqual(argv[argv.indexOf("--effort") + 1], "max", `expected the remembered effort in ${JSON.stringify(argv)}`);
+  });
+
   it("passes the flags claude needs to speak this protocol", async () => {
     const dir = workspace();
     const argvFile = join(dir, "argv.json");
