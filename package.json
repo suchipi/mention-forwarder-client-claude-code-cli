@@ -1,0 +1,22 @@
+{
+  "name": "mention-forwarder-claude-code-cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runs forwarded @-mentions as turns in a Claude Code session, by driving the claude CLI over its stream-json protocol.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "mention-forwarder-claude-code": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

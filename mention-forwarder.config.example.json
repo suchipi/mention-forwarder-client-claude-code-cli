@@ -1,0 +1,12 @@
+{
+  "command": ["node", "/absolute/path/to/mention-forwarder-claude-code-cli/src/cli.ts"],
+  "cwd": "/absolute/path/to/the/checkout/the/agent/should/work/in",
+  "lifecycle": "per-conversation",
+  "timeoutMs": 0,
+  "sessionIdleMs": 900000,
+  "replyDebounceMs": 1500,
+  "maxConcurrentConversations": 4,
+  "ignoreBots": true,
+  "github": { "triggerPhrases": ["@my-bot"] },
+  "linear": { "triggerPhrases": ["@my-bot"] }
+}

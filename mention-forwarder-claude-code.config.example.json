@@ -1,0 +1,9 @@
+{
+  "model": "opus",
+  "effort": "high",
+  "approval": "ask",
+  "permissionMode": "acceptEdits",
+  "progress": "all",
+  "askTimeoutSeconds": 0,
+  "logLevel": "info"
+}
