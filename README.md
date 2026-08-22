@@ -69,6 +69,27 @@ The five settings that matter, and why:
 
 A copy of that config is in [mention-forwarder.config.example.json](./mention-forwarder.config.example.json). Settings for this program itself go in a file of its own, [described below](#settings).
 
+### Or run the whole thing with one script
+
+[`run.sh`](./run.sh) starts mention-forwarder with this client already wired in as its command. It expects mention-forwarder checked out beside this repo, writes the config files into `.run/` the first time, and leaves them alone after that so your edits survive.
+
+```sh
+SIM_PLATFORM=github ./run.sh
+```
+
+That also brings up [mention-forwarder's simulator](https://github.com/suchipi/mention-forwarder/blob/main/simulator/README.md), which stands in for GitHub, Slack, or Linear at <http://127.0.0.1:4000>. Post `@my-bot have a look` in one of its threads and the whole round trip happens on your machine: a signed webhook, the forwarder, this client, `claude`, and the reply landing back in the thread. No account, no tunnel, nothing to register. The secrets are fake on purpose, and only the platform being simulated is switched on.
+
+Leave `SIM_PLATFORM` out to run against the real thing, which needs a webhook secret in `.run/mention-forwarder.env` and a tunnel to your machine.
+
+| Environment | |
+| --- | --- |
+| `MENTION_FORWARDER_DIR` | Where mention-forwarder is checked out. Default `../mention-forwarder`. |
+| `CONFIG_DIR` | Where the generated config lives. Default `./.run`. |
+| `AGENT_CWD` | The checkout the agent works in. Default `$CONFIG_DIR/workspace`, which starts empty; point it at something real once you trust the bot with it. |
+| `TRIGGER` | The phrase that counts as a mention. Default `@my-bot`. Read when the config is first written. |
+| `SIM_PLATFORM` | `github`, `slack`, or `linear`. One simulator imitates one platform. |
+| `SIM_PORT` | The simulator's port. Default `4000`. |
+
 ## What the agent is told
 
 The first mention of a conversation opens the session with the whole context:
