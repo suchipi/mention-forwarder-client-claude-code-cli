@@ -3,7 +3,7 @@
  * than as a substring, so "don't do it" is a refusal and not an approval that
  * happens to contain one.
  */
-const APPROVALS: ReadonlySet<string> = new Set([
+export const APPROVALS: ReadonlySet<string> = new Set([
   "approve",
   "approved",
   "allow",

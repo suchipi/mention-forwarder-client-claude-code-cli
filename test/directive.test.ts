@@ -1,7 +1,10 @@
 import { deepStrictEqual, match, strictEqual } from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { parseDirective } from "../src/directive.ts";
-import { isApproval } from "../src/answer.ts";
+import { APPROVALS, isApproval } from "../src/answer.ts";
 
 describe("the [model=..., effort=...] group", () => {
   it("reads both settings and hands back the rest", () => {
@@ -54,5 +57,19 @@ describe("reading a reply as approval", () => {
     for (const reply of ["no", "don't do it", "please do it after the release", "approve the other one", "", "nope"]) {
       strictEqual(isApproval(reply), false, reply);
     }
+  });
+
+  it("says the same thing in the README as it does here", () => {
+    // People answer a permission request by copying a word out of that list, so
+    // a word that only one of the two knows about is a bug either way round.
+    const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"), "utf8");
+    const block = /### How to answer[\s\S]*?```\n([\s\S]*?)```/.exec(readme)?.[1];
+    if (block === undefined) throw new Error("the README no longer lists the approval words under '### How to answer'");
+
+    const documented = block
+      .split(/\n|\s{2,}/)
+      .map((word) => word.trim())
+      .filter((word) => word !== "");
+    deepStrictEqual(new Set(documented), APPROVALS);
   });
 });

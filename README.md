@@ -1,4 +1,4 @@
-# mention-forwarder-claude-code-cli
+# mention-forwarder-client-claude-code-cli
 
 Runs the @-mentions that [mention-forwarder](https://github.com/suchipi/mention-forwarder) picks up from GitHub, Slack, and Linear as turns in a [Claude Code](https://claude.com/claude-code) session, and posts what the agent says back to the thread the mention came from.
 
@@ -30,7 +30,7 @@ Built and tested against Claude Code 2.1.239. If a later release changes the sha
 ## Quick start
 
 ```sh
-git clone <this repo> && cd mention-forwarder-claude-code-cli
+git clone <this repo> && cd mention-forwarder-client-claude-code-cli
 npm install
 ```
 
@@ -46,7 +46,7 @@ Then point mention-forwarder at it, in its `mention-forwarder.config.json`:
 
 ```json
 {
-  "command": ["node", "/absolute/path/to/mention-forwarder-claude-code-cli/src/cli.ts"],
+  "command": ["node", "/absolute/path/to/mention-forwarder-client-claude-code-cli/src/cli.ts"],
   "cwd": "/absolute/path/to/the/checkout/the/agent/should/work/in",
   "lifecycle": "per-conversation",
   "timeoutMs": 0,
@@ -108,13 +108,69 @@ Permission prompts are routed to this program rather than refused by the CLI, wh
 
 | Mode | A tool that needs permission | A question the agent asks with `AskUserQuestion` |
 | --- | --- | --- |
-| `ask` (default) | Posted to the thread; the turn waits. Reply `approve` (or `allow`, `yes`, `ok`, `lgtm`, `sure`, `go ahead`, `do it`, `proceed`) to allow it. Any other reply refuses it, and what you wrote is given to the agent as the reason. | Posted to the thread with its options; the turn waits. Reply in your own words and the agent carries on with your answer. |
+| `ask` (default) | Posted to the thread; the turn waits for somebody to answer. | Posted to the thread with its options; the turn waits. |
 | `allow` | Approved, unattended. | Refused, with a note telling the agent to put the question in its reply instead. |
 | `deny` | Refused, unattended. What it wanted to run is listed in the thread when the turn ends. | Refused, as above. |
 
-The **next mention in that conversation** is the answer. It is not run as a new turn, and whatever the agent goes on to say is posted under that comment rather than the one that started the turn.
+### What lands in the thread
+
+A tool that needs permission:
+
+> The agent needs permission before it can carry on. It wants to run `Write` on banana.txt.
+>
+> `{"file_path":"/repo/banana.txt","content":"banana"}`
+>
+> Reply `approve` to allow it. Any other reply refuses it, and what you write is given to the agent as the reason.
+
+A question:
+
+> The agent has a question:
+>
+> Do you prefer tabs or spaces for indentation?
+>
+> - `Tabs`: Use tab characters for indentation
+> - `Spaces`: Use space characters for indentation
+>
+> Reply here with your answer and it will carry on.
+
+### How to answer
+
+**The reply has to be a mention like any other.** mention-forwarder only forwards a comment that triggers it, so an answer that does not is never delivered and the turn goes on waiting:
+
+| Where | Write |
+| --- | --- |
+| GitHub, Linear | `@my-bot approve` (whatever you set as a trigger phrase) |
+| A Slack channel or thread | `@my-bot approve` |
+| A Slack DM | `approve`, since a DM needs no mention |
+
+**The next mention in that conversation is the answer.** It is not run as a new turn, and whatever the agent goes on to say is posted under that comment rather than under the one that started the turn.
+
+**A question takes an answer in your own words.** Anything you write is handed to the agent, which carries on with it. There is nothing to match and no wrong reply.
+
+**A permission request takes a yes or anything else.** The whole of what you wrote, with the trigger phrase removed, has to be one of these to count as yes:
+
+```
+approve   approved   allow   allowed   yes   y   ok   okay
+lgtm      sure       go ahead          do it       proceed
+yep       yeah       👍
+```
+
+Case does not matter and a trailing `.`, `!`, `,`, `;`, or `:` is ignored, so `Approve.` and `LGTM` both count. **It is the entire message that is matched, not a phrase inside it**, which is what stops a refusal from being read as approval. So these are all refusals, and each one is handed to the agent as the reason it may not run the tool:
+
+| Reply | Read as |
+| --- | --- |
+| `@my-bot approve` | yes |
+| `@my-bot no, that file is generated` | no, and the agent is told why |
+| `@my-bot please do it after the release` | no, even though it contains "do it" |
+| `@my-bot approve the other one` | no, even though it starts with "approve" |
+
+If you meant yes, say only yes. Anything you want the agent to know goes in the mention after it has carried on.
+
+### Waiting
 
 Under `ask`, a turn can wait indefinitely, which is usually what you want for a thread somebody will get back to tomorrow. `--ask-timeout <seconds>` puts a limit on it, after which the request is refused and the agent is told why. Claude Code's own five minute deadline for a parked prompt is pushed out of the way (`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`), so it is this program that decides.
+
+A request only lives as long as the process holding it. If mention-forwarder closes the session first (`sessionIdleMs`), the request is gone, and a reply that would have answered it is run as an ordinary new turn instead. Set `sessionIdleMs` comfortably longer than you expect anyone to take.
 
 `--permission-mode` is separate and passed straight to `claude`: it decides which tools ask at all. `acceptEdits` is a good pairing with `--approval ask`, since it stops every file edit from needing a comment.
 

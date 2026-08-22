@@ -1,5 +1,5 @@
 {
-  "command": ["node", "/absolute/path/to/mention-forwarder-claude-code-cli/src/cli.ts"],
+  "command": ["node", "/absolute/path/to/mention-forwarder-client-claude-code-cli/src/cli.ts"],
   "cwd": "/absolute/path/to/the/checkout/the/agent/should/work/in",
   "lifecycle": "per-conversation",
   "timeoutMs": 0,
