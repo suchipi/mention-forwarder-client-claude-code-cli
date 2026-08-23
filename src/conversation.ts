@@ -106,7 +106,9 @@ export function createConversation({ options, rules, store, reply, log }: Conver
   }
 
   function remember(): void {
-    if (conversationKey === undefined || sessionId === undefined) return;
+    if (conversationKey === undefined) return;
+    // Written even without a session id: a group on its own settles the thread's
+    // settings and then runs nothing, so this is the only chance to keep them.
     store.set(conversationKey, { sessionId, cwd: options.cwd, model: settings.model, effort: settings.effort });
   }
 

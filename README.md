@@ -81,6 +81,12 @@ That also brings up [mention-forwarder's simulator](https://github.com/suchipi/m
 
 Leave `SIM_PLATFORM` out to run against the real thing, which needs a webhook secret in `.run/mention-forwarder.env` and a tunnel to your machine.
 
+Anything on `run.sh`'s own command line is passed to this client, which is how you reach a flag while testing without editing the config it wrote:
+
+```sh
+./run.sh --no-state --log-level debug
+```
+
 | Environment | |
 | --- | --- |
 | `MENTION_FORWARDER_DIR` | Where mention-forwarder is checked out. Default `../mention-forwarder`. |

@@ -4,7 +4,11 @@ import type { Logger } from "./logger.ts";
 
 /** What is remembered about one conversation between processes. */
 export type Remembered = {
-  sessionId: string;
+  /**
+   * Absent until the session has started, because a `[model=...]` group can settle
+   * a thread's settings before anything has run in it.
+   */
+  sessionId?: string;
   /** The directory the session was started in. Claude Code files a session under its project. */
   cwd: string;
   /** The thread's model and effort, as set by a `[model=...]` group. */

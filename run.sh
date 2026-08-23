@@ -3,6 +3,12 @@
 # on this machine. Set SIM_PLATFORM to bring up the forwarder's simulator too,
 # which is a whole round trip without a real account, a tunnel, or a webhook.
 #
+# Usage: run.sh [client-flag ...]
+#
+# Anything on the command line is passed to this client, e.g.
+#
+#   ./run.sh --no-state --log-level debug
+#
 # Environment:
 #   MENTION_FORWARDER_DIR  where mention-forwarder is checked out (default: ../mention-forwarder)
 #   CONFIG_DIR             where the generated config lives (default: ./.run)
@@ -84,6 +90,22 @@ source "$forwarder_env"
 effective_config="$forwarder_config"
 effective_env="$forwarder_env"
 
+# The client is started by mention-forwarder rather than from here, so a flag for
+# it has to reach the command in the config. Written aside so the file you edit is
+# never rewritten, and derived fresh each run so yesterday's flags do not linger.
+if [[ $# -gt 0 ]]; then
+  args_config="$config_dir/mention-forwarder.args.config.json"
+  node -e '
+    const fs = require("node:fs");
+    const [source, destination, ...extra] = process.argv.slice(1);
+    const config = JSON.parse(fs.readFileSync(source, "utf8"));
+    config.command = [...config.command, ...extra];
+    fs.writeFileSync(destination, JSON.stringify(config, null, 2) + "\n");
+  ' "$effective_config" "$args_config" "$@"
+  effective_config="$args_config"
+  say "passing to the client: $*"
+fi
+
 if [[ -n ${SIM_PLATFORM:-} ]]; then
   case "$SIM_PLATFORM" in
     github) api_url="http://127.0.0.1:$sim_port/api/github" ;;
@@ -93,7 +115,9 @@ if [[ -n ${SIM_PLATFORM:-} ]]; then
   esac
 
   # Replies and reactions have to come back to the simulator rather than to the
-  # real platform. Written aside so the file you edit is never rewritten.
+  # real platform. Written aside so the file you edit is never rewritten, and
+  # derived from whatever the step above settled on so both can apply at once.
+  simulator_source="$effective_config"
   effective_config="$config_dir/mention-forwarder.simulator.config.json"
   node -e '
     const fs = require("node:fs");
@@ -101,7 +125,7 @@ if [[ -n ${SIM_PLATFORM:-} ]]; then
     const config = JSON.parse(fs.readFileSync(source, "utf8"));
     config[platform] = { ...config[platform], apiUrl: url };
     fs.writeFileSync(destination, JSON.stringify(config, null, 2) + "\n");
-  ' "$forwarder_config" "$effective_config" "$SIM_PLATFORM" "$api_url"
+  ' "$simulator_source" "$effective_config" "$SIM_PLATFORM" "$api_url"
 
   # A platform is on only when its secret is present, and one simulator imitates
   # one platform, so the other two are left off rather than warning about
