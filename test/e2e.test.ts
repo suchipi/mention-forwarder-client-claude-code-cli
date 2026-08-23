@@ -144,6 +144,49 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("stops a running turn when somebody says so in the thread", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "hang", args: ["--no-state"] });
+
+    session.send("do something that never finishes");
+    const stopped = session.send("[interrupt]");
+    match(await session.waitFor(stopped, "Stopped"), /Stopped, as asked\./);
+    await session.end();
+  });
+
+  it("runs what followed the interrupt as the next turn", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "hang", args: ["--no-state"] });
+
+    session.send("do something that never finishes");
+    const stopped = session.send("[stop] do this instead");
+    const body = await session.waitFor(stopped, "Stopped");
+    match(body, /Stopped, as asked\./);
+    // The stub only ever hangs on the first turn, so the second answers.
+    match(await session.waitFor(stopped, "stub answered"), /do this instead/);
+    await session.end();
+  });
+
+  it("stops a turn that is waiting on a permission request", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "ask", args: ["--no-state"] });
+
+    await session.waitFor(session.send("write the file"), "needs permission");
+    const stopped = session.send("[int]");
+    const body = await session.waitFor(stopped, "Stopped");
+    match(body, /Stopped, as asked\./);
+    ok(!body.includes("no longer waiting on an answer"), "the withdrawn ask was narrated as well");
+    await session.end();
+  });
+
+  it("says so when an interrupt arrives with nothing to stop", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "plain", args: ["--no-state"] });
+
+    match(await session.waitFor(session.send("[stop]"), "nothing to stop"), /Nothing was running/);
+    await session.end();
+  });
+
   it("gives the agent the refusal a person wrote", async () => {
     const dir = workspace();
     const session = start({ dir, scenario: "ask", args: ["--no-state"] });

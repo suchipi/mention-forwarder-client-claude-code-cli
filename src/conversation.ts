@@ -1,6 +1,6 @@
 import { type Claude, createClaude, type PermissionResult } from "./claude.ts";
 import { isApproval } from "./answer.ts";
-import { type Directive, parseDirective } from "./directive.ts";
+import { type Directive, type Parsed, parseDirective } from "./directive.ts";
 import type { Logger } from "./logger.ts";
 import * as say from "./message.ts";
 import type { Mention } from "./mention.ts";
@@ -19,6 +19,8 @@ type Turn = {
   posted: boolean;
   /** Whether the model's own prose has been posted, which decides the end-of-turn fallback. */
   postedText: boolean;
+  /** Set when somebody in the thread called this turn off, so its abrupt end is not reported as a failure. */
+  interrupted: boolean;
 };
 
 /** An ask waiting for somebody to answer it in the thread. */
@@ -50,6 +52,19 @@ export type ConversationDeps = {
 
 /** How long after a start a non-zero exit is read as "it never got going". */
 const STARTUP_WINDOW_MS = 15000;
+
+/**
+ * The mention again with the interrupt word spent, so anything else the group
+ * carried still runs as a turn of its own. The settings are written back out
+ * rather than applied here, because a turn is what applies them.
+ */
+function afterInterrupt(mention: Mention, parsed: Parsed): Mention | undefined {
+  const group: string[] = [];
+  if (parsed.directive.model !== undefined) group.push(`model=${parsed.directive.model}`);
+  if (parsed.directive.effort !== undefined) group.push(`effort=${parsed.directive.effort}`);
+  const text = (group.length === 0 ? parsed.rest : `[${group.join(", ")}] ${parsed.rest}`).trim();
+  return text === "" ? undefined : { ...mention, text, prompt: text };
+}
 
 export function createConversation({ options, rules, store, reply, log }: ConversationDeps): Conversation {
   let claude: Claude | undefined;
@@ -213,7 +228,8 @@ export function createConversation({ options, rules, store, reply, log }: Conver
         if (parked.timer !== undefined) clearTimeout(parked.timer);
         parked = undefined;
         log.warn("an ask was withdrawn before anyone answered", { requestId: signal.requestId });
-        post("That request is no longer waiting on an answer.");
+        // An interrupt withdraws it on purpose, and says so itself once the turn ends.
+        if (turn?.interrupted !== true) post("That request is no longer waiting on an answer.");
         break;
       }
 
@@ -258,7 +274,9 @@ export function createConversation({ options, rules, store, reply, log }: Conver
       parked = undefined;
     }
 
-    if (!end.ok) {
+    if (finished.interrupted) {
+      post(say.interruptedNotice());
+    } else if (!end.ok) {
       const detail = end.error ?? "no reason given";
       // The CLI reports some failures as prose from the model as well as on the
       // result, and the thread should not be told the same thing twice.
@@ -360,9 +378,29 @@ export function createConversation({ options, rules, store, reply, log }: Conver
 
   /** Posts one line for a mention that never becomes a turn, e.g. a settings change. */
   function reportTo(mention: Mention, text: string): void {
-    turn = { mention, posted: false, postedText: false };
+    turn = { mention, posted: false, postedText: false, interrupted: false };
     post(text);
     turn = undefined;
+  }
+
+  /**
+   * Calls the running turn off. Nothing here clears the turn: the CLI withdraws
+   * whatever it was waiting on, ends the turn itself, and `finishTurn` is what
+   * settles it, which is what keeps that end from landing on a later turn.
+   */
+  async function interruptTurn(mention: Mention): Promise<void> {
+    const running = turn;
+    if (claude === undefined || running === undefined) {
+      log.info("nothing to interrupt", { id: mention.id });
+      reportTo(mention, say.nothingToInterrupt());
+      return;
+    }
+
+    // What is left of this turn belongs to whoever called it off, not to the comment that started it.
+    running.mention = mention;
+    running.interrupted = true;
+    log.info("interrupting the running turn", { id: mention.id, parked: parked !== undefined });
+    await claude.interrupt();
   }
 
   async function run(mention: Mention, body: string): Promise<void> {
@@ -377,7 +415,7 @@ export function createConversation({ options, rules, store, reply, log }: Conver
     // Read after starting: resuming a session that is gone clears it, and the
     // fresh session that replaces it needs the opening framing.
     const opening = sessionId === undefined;
-    turn = { mention, posted: false, postedText: false };
+    turn = { mention, posted: false, postedText: false, interrupted: false };
 
     const text = opening ? say.firstMessage(mention, body) : say.followUpMessage(mention, body);
     log.info("running a mention", { id: mention.id, url: mention.url, opening, chars: text.length });
@@ -443,6 +481,17 @@ export function createConversation({ options, rules, store, reply, log }: Conver
           effort: remembered.effort ?? settings.effort,
         };
         log.info("picking a thread back up", { sessionId, model: settings.model, effort: settings.effort });
+      }
+
+      // Read before the two branches below, because stopping a turn is the one
+      // thing a person needs to be able to say while it is running or waiting.
+      const parsed = parseDirective(say.spokenText(mention));
+      if (parsed.directive.interrupt === true) {
+        await interruptTurn(mention);
+        const next = afterInterrupt(mention, parsed);
+        if (next !== undefined) waiting.push(next);
+        drain();
+        return;
       }
 
       if (parked !== undefined) {

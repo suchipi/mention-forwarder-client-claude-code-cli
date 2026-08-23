@@ -103,6 +103,24 @@ function questionsIn(ask: Ask): string[] {
 }
 
 /**
+ * `Bash` describes what its command does rather than what it acts on, so the
+ * generic "run `X` on Y" sentence reads that summary as the thing acted upon.
+ */
+function bashPhrasing(ask: Ask): { what: string; rest: Record<string, unknown> } | undefined {
+  if (ask.tool.name !== "Bash") return undefined;
+
+  const command = ask.tool.input["command"];
+  if (typeof command !== "string" || command.trim() === "") return undefined;
+
+  const described = ask.description ?? ask.tool.input["description"];
+  const summary = typeof described === "string" ? inlineCode(described) : "";
+  const rest = Object.fromEntries(Object.entries(ask.tool.input).filter(([key]) => key !== "command" && key !== "description"));
+  const shown = `the shell command \`${inlineCode(command)}\``;
+
+  return { what: summary === "" ? shown : `${shown} (${summary})`, rest };
+}
+
+/**
  * What to post when a turn stops for a person. Written in plain text with code
  * spans only, because the same string goes to GitHub, Slack, and Linear, and
  * Slack of the three ignores most markdown.
@@ -120,8 +138,10 @@ export function askNotice(ask: Ask): string {
     return `The agent is waiting on \`${ask.tool.name}\` for something only a person can give it. Reply here with your answer.`;
   }
 
-  const what = ask.description === undefined ? `\`${ask.tool.name}\`` : `\`${ask.tool.name}\` on ${inlineCode(ask.description)}`;
-  const args = describeInput(ask.tool.input);
+  const bash = bashPhrasing(ask);
+  const what =
+    bash?.what ?? (ask.description === undefined ? `\`${ask.tool.name}\`` : `\`${ask.tool.name}\` on ${inlineCode(ask.description)}`);
+  const args = describeInput(bash?.rest ?? ask.tool.input);
   const detail = args === "" ? "" : `\n\n\`${args}\``;
   const why = ask.reason === undefined ? "" : `\n\nWhy it is asking: ${inlineCode(ask.reason)}`;
 
@@ -136,6 +156,16 @@ export function answerToQuestion(reply: string): string {
 /** Given to `AskUserQuestion` when nobody is going to be asked at all. */
 export function nobodyToAsk(): string {
   return "There is nobody at a keyboard to answer that. Put the question in your reply and end your turn; whoever is watching the thread will answer it as a new mention.";
+}
+
+/** Posted once a turn somebody called off has actually stopped. */
+export function interruptedNotice(): string {
+  return "Stopped, as asked.";
+}
+
+/** Posted when an interrupt found nothing to stop, which a turn that finished on its own moments earlier will do. */
+export function nothingToInterrupt(): string {
+  return "Nothing was running, so there was nothing to stop.";
 }
 
 export function refusedByPolicy(toolName: string): string {

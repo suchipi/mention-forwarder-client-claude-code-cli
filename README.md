@@ -11,7 +11,7 @@ Linear  ──┘           ▲                                      ◀──�
                       └─────────────── reply file ───────────┘
 ```
 
-One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model and reasoning effort, by opening a mention with `[model=opus, effort=max]`.
+One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model and reasoning effort, by opening a mention with `[model=opus, effort=max]`, and a turn already running can be called off with `[stop]`.
 
 | mention-forwarder | this program | Claude Code |
 | --- | --- | --- |
@@ -143,6 +143,12 @@ A tool that needs permission:
 >
 > Reply `approve` to allow it. Any other reply refuses it, and what you write is given to the agent as the reason.
 
+A shell command, whose summary of what it does goes in the sentence rather than being named as the thing it acts on:
+
+> The agent needs permission before it can carry on. It wants to run the shell command `git push origin main` (Push the branch).
+>
+> Reply `approve` to allow it. Any other reply refuses it, and what you write is given to the agent as the reason.
+
 A question:
 
 > The agent has a question:
@@ -226,7 +232,30 @@ Some examples:
 
 Both are start-up flags, so changing one restarts the `claude` process on the same session id. The thread keeps its history.
 
-One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn.
+One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn. The exception is [`[stop]`](#stopping-a-turn), which is read wherever it appears.
+
+## Stopping a turn
+
+A turn already running can be called off from the thread, with the same bracketed group, using any of these words:
+
+```
+interrupt   stop   int
+```
+
+```
+@my-bot [stop]
+@my-bot [stop] look at the release branch instead, not main
+```
+
+The `claude` process is interrupted where it stands. It is not killed and the session is not lost: the thread keeps its history and the next mention carries on from there.
+
+| | |
+| --- | --- |
+| While a turn is running | It is stopped. Whatever the agent had already said is posted, followed by `Stopped, as asked.` |
+| While a turn is waiting on a permission request or a question | It is stopped too. The tool does not run. This is the one group that is read while something is waiting, rather than being taken as the answer. |
+| While nothing is running | Nothing to do, and the bot says so. A turn that finished a moment before the comment arrived reads this way. |
+| With an instruction after it | The instruction runs as the next turn, once the stopped one has finished stopping. Anything already queued behind it still runs first, in the order it arrived. |
+| With settings after it | `[interrupt, model=opus] try again` stops the turn and applies the settings to the one that replaces it. |
 
 ## Settings
 
@@ -368,7 +397,8 @@ A patterns file needs no build step and no reinstall, so a release that breaks s
 | `no pattern matched an event` in the log | A `claude` release changed a shape. See [Pattern detection](#pattern-detection). |
 | A second mention is answered only after the first finishes | Expected: turns in one session run one at a time, in arrival order. |
 | The turn failed with a model error | The `[model=…]` group named something `claude` cannot use. What `claude` said is posted to the thread. |
-| A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value`, or it was answering a waiting request. See [Choosing the model](#choosing-the-model). |
+| A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or an interrupt word, or it was answering a waiting request. See [Choosing the model](#choosing-the-model). |
+| `[stop]` did nothing but post a line saying nothing was running | The turn had already finished by the time mention-forwarder delivered the comment. See [Stopping a turn](#stopping-a-turn). |
 
 ## Development
 
@@ -390,7 +420,7 @@ npm run typecheck
 | `src/signals.ts` | The vocabulary the rest of the program thinks in. |
 | `src/conversation.ts` | One thread: which mention starts a turn, which answers an ask, and what gets posted. |
 | `src/message.ts` | What the agent is told, and what the thread sees. |
-| `src/directive.ts` | The `[model=…, effort=…]` group at the start of a mention. |
+| `src/directive.ts` | The `[model=…, effort=…, interrupt]` group at the start of a mention. |
 | `src/answer.ts` | Whether a reply means "go ahead". |
 | `src/reply.ts` | Appending to the mention's reply file. |
 | `src/session-store.ts` | Remembers which session belongs to which conversation. |

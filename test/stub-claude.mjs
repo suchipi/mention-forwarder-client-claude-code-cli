@@ -75,6 +75,9 @@ function runTurn(text) {
     return;
   }
 
+  // Answers nothing at all, so a test can interrupt the turn without racing it.
+  if (scenario === "hang" && turns === 1) return;
+
   const answer = () => {
     emitText(`stub answered turn ${turns}: ${text.split("\n").at(-1)}`);
     emitResult(`stub answered turn ${turns}`);
@@ -102,6 +105,16 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const frame = JSON.parse(line);
 
   if (frame.type === "control_request") {
+    // The real CLI withdraws a waiting ask, acks, and ends the turn as an error.
+    if (frame.request?.subtype === "interrupt") {
+      if (pendingAsk !== undefined) {
+        out({ type: "control_cancel_request", request_id: pendingAsk });
+        pendingAsk = undefined;
+      }
+      out({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: { still_queued: [], cancelled: [] } } });
+      out({ type: "result", subtype: "error_during_execution", is_error: true, result: "", permission_denials: [], session_id: sessionId });
+      return;
+    }
     out({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: {} } });
     return;
   }

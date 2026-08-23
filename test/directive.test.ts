@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseDirective } from "../src/directive.ts";
+import { INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
 import { APPROVALS, isApproval } from "../src/answer.ts";
 
 describe("the [model=..., effort=...] group", () => {
@@ -43,6 +43,46 @@ describe("the [model=..., effort=...] group", () => {
 
   it("reports a model set to nothing", () => {
     match(parseDirective("[model=] go").problem ?? "", /set `model` to nothing/);
+  });
+});
+
+describe("the [interrupt] word", () => {
+  it("takes any of the words it documents, whatever their case", () => {
+    for (const word of ["interrupt", "stop", "int", "STOP", "Interrupt"]) {
+      deepStrictEqual(parseDirective(`[${word}]`).directive, { interrupt: true }, word);
+    }
+  });
+
+  it("hands back whatever followed it, so it can stop one thing and start another", () => {
+    const parsed = parseDirective("[stop] look at the other branch instead");
+    deepStrictEqual(parsed.directive, { interrupt: true });
+    strictEqual(parsed.rest, "look at the other branch instead");
+  });
+
+  it("sits alongside the settings, in either order", () => {
+    deepStrictEqual(parseDirective("[interrupt, model=opus] retry").directive, { model: "opus", interrupt: true });
+    deepStrictEqual(parseDirective("[effort=max, stop] retry").directive, { effort: "max", interrupt: true });
+  });
+
+  it("leaves a bare word it does not know alone, group and all", () => {
+    for (const body of ["[halt] go", "[stopping] go", "[stop it] go"]) {
+      deepStrictEqual(parseDirective(body).directive, {}, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("says the same thing in the README as it does here", () => {
+    // People stop a turn by copying a word out of that list, so a word only one
+    // of the two knows about is a bug either way round.
+    const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"), "utf8");
+    const block = /## Stopping a turn[\s\S]*?```\n([\s\S]*?)```/.exec(readme)?.[1];
+    if (block === undefined) throw new Error("the README no longer lists the interrupt words under '## Stopping a turn'");
+
+    const documented = block
+      .split(/\n|\s{2,}/)
+      .map((word) => word.trim())
+      .filter((word) => word !== "");
+    deepStrictEqual(new Set(documented), INTERRUPT_WORDS);
   });
 });
 

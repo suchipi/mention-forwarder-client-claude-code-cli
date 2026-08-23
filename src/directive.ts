@@ -1,9 +1,14 @@
 /** Reasoning effort levels `claude --effort` takes. */
 export const EFFORT_LEVELS: readonly string[] = ["low", "medium", "high", "xhigh", "max"];
 
+/** The bare words a group may carry to call the thread's running turn off. */
+export const INTERRUPT_WORDS: ReadonlySet<string> = new Set(["interrupt", "stop", "int"]);
+
 export type Directive = {
   model?: string;
   effort?: string;
+  /** Unlike the others this is something to do, not a setting to keep. */
+  interrupt?: boolean;
 };
 
 export type Parsed = {
@@ -18,7 +23,7 @@ export type Parsed = {
 const GROUP = /^\[([^\]\n]*)\]/;
 
 /**
- * Reads a `[model=..., effort=...]` group off the front of a mention.
+ * Reads a `[model=..., effort=..., interrupt]` group off the front of a mention.
  *
  * Anything else in brackets is left alone and passed to the agent as written,
  * because a comment may well open with `[WIP]` or `[bug]` and mean nothing by it.
@@ -40,7 +45,11 @@ export function parseDirective(body: string): Parsed {
   const directive: Directive = {};
   for (const part of parts) {
     const split = part.indexOf("=");
-    if (split < 0) return { directive: {}, rest: text };
+    if (split < 0) {
+      if (!INTERRUPT_WORDS.has(part.toLowerCase())) return { directive: {}, rest: text };
+      directive.interrupt = true;
+      continue;
+    }
     const name = part.slice(0, split).trim().toLowerCase();
     const value = part.slice(split + 1).trim();
     if (name === "model") directive.model = value;

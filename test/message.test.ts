@@ -74,6 +74,26 @@ describe("what the thread sees", () => {
     match(notice, /Reply `approve`/);
   });
 
+  it("puts a shell command in the sentence, where Bash's summary would read as an object", () => {
+    const notice = say.askNotice(
+      ask({
+        description: "List repo contents",
+        tool: { name: "Bash", toolUseId: "t7", input: { command: "ls -la", description: "List repo contents" } },
+      }),
+    );
+    match(notice, /run the shell command `ls -la` \(List repo contents\)\./);
+    doesNotMatch(notice, /`Bash` on/);
+  });
+
+  it("still shows the Bash arguments the sentence leaves out", () => {
+    const notice = say.askNotice(
+      ask({ tool: { name: "Bash", toolUseId: "t8", input: { command: "npm test", run_in_background: true } } }),
+    );
+    match(notice, /run the shell command `npm test`\./);
+    match(notice, /run_in_background/);
+    doesNotMatch(notice, /`\{"command"/);
+  });
+
   it("lays a question out with its options", () => {
     const notice = say.askNotice(
       ask({
@@ -121,6 +141,11 @@ describe("what the thread sees", () => {
     const notice = say.denialNotice([{ toolName: "Bash", toolUseId: "t6", input: { command: "rm -rf /" } }]);
     match(notice, /stopped short of running/);
     match(notice, /`Bash`/);
+  });
+
+  it("says a stopped turn was stopped, not that it failed", () => {
+    match(say.interruptedNotice(), /Stopped, as asked\./);
+    match(say.nothingToInterrupt(), /nothing to stop/);
   });
 
   it("confirms a settings change", () => {
