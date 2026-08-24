@@ -148,6 +148,14 @@ describe("what the thread sees", () => {
     match(say.nothingToInterrupt(), /nothing to stop/);
   });
 
+  it("says the process was ended, and whether a turn went with it", () => {
+    match(say.exitedNotice(false), /Ended the Claude Code process\./);
+    doesNotMatch(say.exitedNotice(false), /went with it/);
+    match(say.exitedNotice(true), /turn it was running went with it/);
+    match(say.exitedNotice(true), /keeps its history/);
+    match(say.nothingToExit(), /nothing to end/);
+  });
+
   it("confirms a settings change", () => {
     match(say.directiveNotice({ model: "opus" }, { model: "opus", effort: "high" }), /now on model `opus`\.$/);
     match(say.directiveNotice({ model: "opus", effort: "max" }, { model: "opus", effort: "max" }), /model `opus` and effort `max`/);

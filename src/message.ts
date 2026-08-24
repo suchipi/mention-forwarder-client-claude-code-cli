@@ -168,6 +168,17 @@ export function nothingToInterrupt(): string {
   return "Nothing was running, so there was nothing to stop.";
 }
 
+/** Posted once the thread's `claude` process has been ended. */
+export function exitedNotice(hadTurn: boolean): string {
+  const lost = hadTurn ? " The turn it was running went with it." : "";
+  return `Ended the Claude Code process.${lost} The next mention here starts a new one on the same session, so the thread keeps its history.`;
+}
+
+/** Posted when an exit found no process, which an idle session closed by mention-forwarder will do. */
+export function nothingToExit(): string {
+  return "Claude Code was not running here, so there was nothing to end. The next mention starts it.";
+}
+
 export function refusedByPolicy(toolName: string): string {
   return `\`${toolName}\` was refused: this bot runs with every permission request denied.`;
 }

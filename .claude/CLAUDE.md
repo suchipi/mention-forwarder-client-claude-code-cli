@@ -35,7 +35,7 @@ stdin ──▶ mention.ts ──▶ cli.ts (serialized queue) ──▶ convers
                                     reply.ts (reply file) ◀───┘
 ```
 
-`conversation.ts` is the whole state machine and the only module that decides anything. It holds at most one running `turn`, at most one `parked` ask, and a `waiting` queue of mentions behind them. Each arriving mention takes exactly one of four paths, in this order: an interrupt group stops the running turn; otherwise a parked ask makes the mention that ask's answer; otherwise a running turn queues it; otherwise it starts a turn.
+`conversation.ts` is the whole state machine and the only module that decides anything. It holds at most one running `turn`, at most one `parked` ask, and a `waiting` queue of mentions behind them. Each arriving mention takes exactly one of five paths, in this order: an exit group ends the `claude` process, turn and all; otherwise an interrupt group stops the running turn; otherwise a parked ask makes the mention that ask's answer; otherwise a running turn queues it; otherwise it starts a turn.
 
 ## Invariants
 
@@ -55,7 +55,7 @@ These are load-bearing across several files and are easy to break with a local-l
 
 **Adding an option** touches four places, and the tests will not catch a missed one: `cli.ts` (the `parseArgs` map and the `HELP` text), `options.ts` (`Flags`, `Options`, `resolveOptions`), `config-file.ts` (the `ConfigFile` type plus the `STRING_FIELDS` / `STRING_LIST_FIELDS` / `NUMBER_FIELDS` / `PATH_FIELDS` lists), and the two README tables under "Settings" and "Options". Unknown or wrongly typed config keys are refused at startup, so a field missing from those lists makes a valid config an error.
 
-**The README is a test fixture.** `test/directive.test.ts` parses the word lists out of it and asserts they equal `INTERRUPT_WORDS` (`src/directive.ts`) and `APPROVALS` (`src/answer.ts`). Changing either set, or the README headings `## Stopping a turn` and `### How to answer`, or the fenced blocks under them, fails the test.
+**The README is a test fixture.** `test/directive.test.ts` parses the word lists out of it and asserts they equal `INTERRUPT_WORDS` and `EXIT_WORDS` (`src/directive.ts`) and `APPROVALS` (`src/answer.ts`). Changing any of those sets, or the README headings `## Stopping a turn`, `## Ending the process`, and `### How to answer`, or the first fenced block under each, fails the test.
 
 **`test/patterns.test.ts` holds real `claude` output**, copied from actual runs with long fields shortened. When a release changes a shape, add the new event there; that file is the record of what this program supports.
 

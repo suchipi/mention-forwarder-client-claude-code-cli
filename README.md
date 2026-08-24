@@ -238,7 +238,7 @@ Some examples:
 
 Both are start-up flags, so changing one restarts the `claude` process on the same session id. The thread keeps its history.
 
-One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn. The exception is [`[stop]`](#stopping-a-turn), which is read wherever it appears.
+One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn) and [`[exit]`](#ending-the-process), which are read wherever they appear.
 
 ## Stopping a turn
 
@@ -253,7 +253,7 @@ interrupt   stop   int
 @my-bot [stop] look at the release branch instead, not main
 ```
 
-The `claude` process is interrupted where it stands. It is not killed and the session is not lost: the thread keeps its history and the next mention carries on from there.
+The `claude` process is interrupted where it stands. It is not killed and the session is not lost: the thread keeps its history and the next mention carries on from there. To end the process itself, see [Ending the process](#ending-the-process).
 
 | | |
 | --- | --- |
@@ -262,6 +262,29 @@ The `claude` process is interrupted where it stands. It is not killed and the se
 | While nothing is running | Nothing to do, and the bot says so. A turn that finished a moment before the comment arrived reads this way. |
 | With an instruction after it | The instruction runs as the next turn, once the stopped one has finished stopping. Anything already queued behind it still runs first, in the order it arrived. |
 | With settings after it | `[interrupt, model=opus] try again` stops the turn and applies the settings to the one that replaces it. |
+
+## Ending the process
+
+The `claude` process itself can be ended from the thread, with the same bracketed group, using either of these words:
+
+```
+exit   quit
+```
+
+```
+@my-bot [exit]
+@my-bot [exit] now have another go at it
+```
+
+The process is stopped where it stands, and whatever it was doing goes with it. The session is not lost: the next mention in the thread starts a process again on the same session, so it still has everything said before. Reach for this when the process is wedged, when it is holding onto something you would rather it forgot, or when it was started from a `claude` you have upgraded since. Reach for [`[stop]`](#stopping-a-turn) when it is only the turn you want rid of.
+
+| | |
+| --- | --- |
+| While a turn is running | It goes with the process. Whatever the agent had already said stays posted, and the end is not reported as a failure. |
+| While a turn is waiting on a permission request or a question | It goes too, and the tool does not run. Like `[stop]`, this is read while something is waiting rather than being taken as the answer. |
+| While the process is not running | Nothing to do, and the bot says so. A thread whose session mention-forwarder has already closed for being idle reads this way. |
+| With an instruction after it | The instruction runs as the next turn, in the process that replaces this one. Anything already queued still runs first, in the order it arrived. |
+| With settings after it | `[exit, model=opus] try again` ends the process and applies the settings to the one that replaces it. |
 
 ## Settings
 
@@ -403,8 +426,9 @@ A patterns file needs no build step and no reinstall, so a release that breaks s
 | `no pattern matched an event` in the log | A `claude` release changed a shape. See [Pattern detection](#pattern-detection). |
 | A second mention is answered only after the first finishes | Expected: turns in one session run one at a time, in arrival order. |
 | The turn failed with a model error | The `[model=…]` group named something `claude` cannot use. What `claude` said is posted to the thread. |
-| A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or an interrupt word, or it was answering a waiting request. See [Choosing the model](#choosing-the-model). |
+| A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or one of the bare words this program knows, or it was answering a waiting request. See [Choosing the model](#choosing-the-model). |
 | `[stop]` did nothing but post a line saying nothing was running | The turn had already finished by the time mention-forwarder delivered the comment. See [Stopping a turn](#stopping-a-turn). |
+| `[exit]` did nothing but post a line saying nothing was running | There was no `claude` process to end: mention-forwarder had closed the session for being idle, or it had already gone. The next mention starts one. See [Ending the process](#ending-the-process). |
 
 ## Development
 
@@ -426,7 +450,7 @@ npm run typecheck
 | `src/signals.ts` | The vocabulary the rest of the program thinks in. |
 | `src/conversation.ts` | One thread: which mention starts a turn, which answers an ask, and what gets posted. |
 | `src/message.ts` | What the agent is told, and what the thread sees. |
-| `src/directive.ts` | The `[model=…, effort=…, interrupt]` group at the start of a mention. |
+| `src/directive.ts` | The `[model=…, effort=…, interrupt, exit]` group at the start of a mention. |
 | `src/answer.ts` | Whether a reply means "go ahead". |
 | `src/reply.ts` | Appending to the mention's reply file. |
 | `src/session-store.ts` | Remembers which session belongs to which conversation. |

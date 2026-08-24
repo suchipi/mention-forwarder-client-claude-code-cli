@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
+import { EXIT_WORDS, INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
 import { APPROVALS, isApproval } from "../src/answer.ts";
 
 describe("the [model=..., effort=...] group", () => {
@@ -83,6 +83,44 @@ describe("the [interrupt] word", () => {
       .map((word) => word.trim())
       .filter((word) => word !== "");
     deepStrictEqual(new Set(documented), INTERRUPT_WORDS);
+  });
+});
+
+describe("the [exit] word", () => {
+  it("takes any of the words it documents, whatever their case", () => {
+    for (const word of ["exit", "quit", "EXIT", "Quit"]) {
+      deepStrictEqual(parseDirective(`[${word}]`).directive, { exit: true }, word);
+    }
+  });
+
+  it("hands back whatever followed it, so it can end one process and set the next to work", () => {
+    const parsed = parseDirective("[exit] have another go at it");
+    deepStrictEqual(parsed.directive, { exit: true });
+    strictEqual(parsed.rest, "have another go at it");
+  });
+
+  it("sits alongside the settings and the interrupt word", () => {
+    deepStrictEqual(parseDirective("[exit, model=opus] retry").directive, { model: "opus", exit: true });
+    deepStrictEqual(parseDirective("[stop, quit] retry").directive, { interrupt: true, exit: true });
+  });
+
+  it("leaves a bare word it does not know alone, group and all", () => {
+    for (const body of ["[exited] go", "[quitting] go", "[exit now] go"]) {
+      deepStrictEqual(parseDirective(body).directive, {}, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("says the same thing in the README as it does here", () => {
+    const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"), "utf8");
+    const block = /## Ending the process[\s\S]*?```\n([\s\S]*?)```/.exec(readme)?.[1];
+    if (block === undefined) throw new Error("the README no longer lists the exit words under '## Ending the process'");
+
+    const documented = block
+      .split(/\n|\s{2,}/)
+      .map((word) => word.trim())
+      .filter((word) => word !== "");
+    deepStrictEqual(new Set(documented), EXIT_WORDS);
   });
 });
 

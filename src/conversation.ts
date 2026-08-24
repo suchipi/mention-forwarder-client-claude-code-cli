@@ -54,11 +54,11 @@ export type ConversationDeps = {
 const STARTUP_WINDOW_MS = 15000;
 
 /**
- * The mention again with the interrupt word spent, so anything else the group
- * carried still runs as a turn of its own. The settings are written back out
- * rather than applied here, because a turn is what applies them.
+ * The mention again with the word that did something spent, so anything else the
+ * group carried still runs as a turn of its own. The settings are written back
+ * out rather than applied here, because a turn is what applies them.
  */
-function afterInterrupt(mention: Mention, parsed: Parsed): Mention | undefined {
+function afterDirective(mention: Mention, parsed: Parsed): Mention | undefined {
   const group: string[] = [];
   if (parsed.directive.model !== undefined) group.push(`model=${parsed.directive.model}`);
   if (parsed.directive.effort !== undefined) group.push(`effort=${parsed.directive.effort}`);
@@ -405,6 +405,35 @@ export function createConversation({ options, rules, store, reply, log }: Conver
     await claude.interrupt();
   }
 
+  /**
+   * Ends the process itself, turn and all. The session id is kept, so the next
+   * mention starts a process again and picks the thread's history back up.
+   */
+  async function endProcess(mention: Mention): Promise<void> {
+    const running = claude;
+    if (running === undefined) {
+      log.info("nothing to exit", { id: mention.id });
+      reportTo(mention, say.nothingToExit());
+      return;
+    }
+
+    const hadTurn = turn !== undefined;
+    // Dropped before the process goes: a turn-end event on the way out would
+    // otherwise post to a turn that is over, and start the next one from here.
+    turn = undefined;
+    log.info("ending the claude process", { id: mention.id, hadTurn, parked: parked !== undefined });
+
+    stopping = true;
+    await running.stop();
+    stopping = false;
+    claude = undefined;
+    // A resume that failed earlier must not stop the replacement resuming: the
+    // session id kept here is one that did open.
+    resumeFailed = false;
+
+    reportTo(mention, say.exitedNotice(hadTurn));
+  }
+
   async function run(mention: Mention, body: string): Promise<void> {
     if (!(await ensureRunning())) {
       // An exit during startup is reported by onExit only once a turn is open,
@@ -485,12 +514,20 @@ export function createConversation({ options, rules, store, reply, log }: Conver
         log.info("picking a thread back up", { sessionId, model: settings.model, effort: settings.effort });
       }
 
-      // Read before the two branches below, because stopping a turn is the one
-      // thing a person needs to be able to say while it is running or waiting.
+      // Read before the two branches below, because calling the agent off is the
+      // one thing a person needs to be able to say while it is running or waiting.
       const parsed = parseDirective(say.spokenText(mention));
+      // Ending the process subsumes stopping the turn, so it is read first.
+      if (parsed.directive.exit === true) {
+        await endProcess(mention);
+        const next = afterDirective(mention, parsed);
+        if (next !== undefined) waiting.push(next);
+        drain();
+        return;
+      }
       if (parsed.directive.interrupt === true) {
         await interruptTurn(mention);
-        const next = afterInterrupt(mention, parsed);
+        const next = afterDirective(mention, parsed);
         if (next !== undefined) waiting.push(next);
         drain();
         return;

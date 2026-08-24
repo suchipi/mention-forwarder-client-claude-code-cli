@@ -4,11 +4,16 @@ export const EFFORT_LEVELS: readonly string[] = ["low", "medium", "high", "xhigh
 /** The bare words a group may carry to call the thread's running turn off. */
 export const INTERRUPT_WORDS: ReadonlySet<string> = new Set(["interrupt", "stop", "int"]);
 
+/** The bare words a group may carry to end the thread's `claude` process. */
+export const EXIT_WORDS: ReadonlySet<string> = new Set(["exit", "quit"]);
+
 export type Directive = {
   model?: string;
   effort?: string;
   /** Unlike the others this is something to do, not a setting to keep. */
   interrupt?: boolean;
+  /** Something to do as well: end the process, and not only the turn. */
+  exit?: boolean;
 };
 
 export type Parsed = {
@@ -23,7 +28,7 @@ export type Parsed = {
 const GROUP = /^\[([^\]\n]*)\]/;
 
 /**
- * Reads a `[model=..., effort=..., interrupt]` group off the front of a mention.
+ * Reads a `[model=..., effort=..., interrupt, exit]` group off the front of a mention.
  *
  * Anything else in brackets is left alone and passed to the agent as written,
  * because a comment may well open with `[WIP]` or `[bug]` and mean nothing by it.
@@ -46,8 +51,10 @@ export function parseDirective(body: string): Parsed {
   for (const part of parts) {
     const split = part.indexOf("=");
     if (split < 0) {
-      if (!INTERRUPT_WORDS.has(part.toLowerCase())) return { directive: {}, rest: text };
-      directive.interrupt = true;
+      const word = part.toLowerCase();
+      if (INTERRUPT_WORDS.has(word)) directive.interrupt = true;
+      else if (EXIT_WORDS.has(word)) directive.exit = true;
+      else return { directive: {}, rest: text };
       continue;
     }
     const name = part.slice(0, split).trim().toLowerCase();

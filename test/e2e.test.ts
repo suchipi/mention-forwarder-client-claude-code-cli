@@ -179,6 +179,61 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("ends the claude process when somebody says so in the thread", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "hang", args: ["--no-state"] });
+
+    session.send("do something that never finishes");
+    const exited = await session.waitFor(session.send("[exit]"), "Ended the Claude Code process");
+    match(exited, /turn it was running went with it/);
+    ok(!exited.includes("The turn failed"), "the process going away was reported as a failure");
+    await session.end();
+  });
+
+  it("ends a process whose turn is waiting on a permission request", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "ask", args: ["--no-state"] });
+
+    await session.waitFor(session.send("write the file"), "needs permission");
+    const exited = await session.waitFor(session.send("[exit]"), "Ended the Claude Code process");
+    match(exited, /turn it was running went with it/);
+    ok(!exited.includes("no longer waiting on an answer"), "the ask that died with the process was narrated as well");
+    await session.end();
+  });
+
+  it("starts a new process on the same session for what followed the exit", async () => {
+    const dir = workspace();
+    const transcript = join(dir, "transcript.txt");
+    const argvFile = join(dir, "argv.json");
+    const session = start({
+      dir,
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript, CLAUDE_STUB_ARGV_FILE: argvFile },
+      args: ["--no-state"],
+    });
+
+    await session.waitFor(session.send("first", "a"));
+    const exited = session.send("[exit] do this instead", "b");
+    await session.waitFor(exited, "Ended the Claude Code process");
+    match(await session.waitFor(exited, "stub answered"), /do this instead/);
+    await session.end();
+
+    // The process that replaced it wrote over the first one's argv on its way up.
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(argv.includes("--resume=11111111-2222-3333-4444-555555555555"), `expected a resume flag in ${JSON.stringify(argv)}`);
+
+    const turns = readFileSync(transcript, "utf8").split("\n---\n").filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 2);
+    ok(!(turns[1] ?? "").includes("posted back to that thread as a comment"), "the replacement was told it was opening a session");
+  });
+
+  it("says so when an exit arrives with no process to end", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "plain", args: ["--no-state"] });
+
+    match(await session.waitFor(session.send("[quit]"), "nothing to end"), /Claude Code was not running/);
+    await session.end();
+  });
+
   it("says so when an interrupt arrives with nothing to stop", async () => {
     const dir = workspace();
     const session = start({ dir, scenario: "plain", args: ["--no-state"] });
