@@ -136,8 +136,8 @@ Permission prompts are routed to this program rather than refused by the CLI, wh
 | Mode | A tool that needs permission | A question the agent asks with `AskUserQuestion` |
 | --- | --- | --- |
 | `ask` (default) | Posted to the thread; the turn waits for somebody to answer. | Posted to the thread with its options; the turn waits. |
-| `allow` | Approved, unattended. | Refused, with a note telling the agent to put the question in its reply instead. |
-| `deny` | Refused, unattended. What it wanted to run is listed in the thread when the turn ends. | Refused, as above. |
+| `allow` | Approved, unattended. | Posted to the thread with its options; the turn waits. A question is the one thing `allow` does not approve, since approving it would not produce an answer. |
+| `deny` | Refused, unattended. What it wanted to run is listed in the thread when the turn ends. | Refused, with a note telling the agent to put the question in its reply instead. |
 
 ### What lands in the thread
 

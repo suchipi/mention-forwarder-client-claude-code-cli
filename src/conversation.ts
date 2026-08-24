@@ -139,13 +139,13 @@ export function createConversation({ options, rules, store, reply, log }: Conver
   }
 
   function onAsk(ask: Ask): void {
-    // A question has no answer to auto-supply, so it is refused with an
-    // explanation whenever there is nobody being asked.
-    if (ask.isQuestion && options.approval !== "ask") {
+    // A question cannot be approved into an answer the way a tool can, so the
+    // only mode that refuses one outright is the one that talks to nobody.
+    if (ask.isQuestion && options.approval === "deny") {
       settle(ask, { behavior: "deny", message: say.nobodyToAsk() });
       return;
     }
-    if (options.approval === "allow") {
+    if (options.approval === "allow" && !ask.isQuestion) {
       settle(ask, { behavior: "allow", updatedInput: ask.tool.input });
       return;
     }

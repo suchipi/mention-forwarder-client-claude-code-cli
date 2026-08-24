@@ -15,7 +15,7 @@ export function systemPrompt(approval: ApprovalMode): string {
   const waiting: Record<ApprovalMode, string> = {
     ask: "When you need permission to run a tool, or ask a question with AskUserQuestion, it is posted to the thread and your turn waits there until somebody answers, which can take hours. Do everything that does not depend on the answer first.",
     allow:
-      "Tool permissions are approved automatically and nobody is watching, so do not use AskUserQuestion. If you need something from a person, say so in your reply and end your turn.",
+      "Tool permissions are approved automatically, so nothing stops for those. A question you ask with AskUserQuestion is posted to the thread and your turn waits there until somebody answers, which can take hours. Do everything that does not depend on the answer first.",
     deny: "Tool permissions are refused automatically and nobody is watching, so do not use AskUserQuestion. If you need something a refused tool would have done, say so in your reply and end your turn.",
   };
 

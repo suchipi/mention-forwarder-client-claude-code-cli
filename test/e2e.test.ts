@@ -274,6 +274,25 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("still waits on a question under --approval allow", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "question", args: ["--no-state", "--approval", "allow"] });
+
+    match(await session.waitFor(session.send("ask me something"), "has a question"), /Tabs or spaces\?/);
+    const second = session.send("spaces");
+    match(await session.waitFor(second), /The person you asked replied, in the thread: spaces/);
+    await session.end();
+  });
+
+  it("refuses a question under --approval deny", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "question", args: ["--no-state", "--approval", "deny"] });
+
+    const reply = session.send("ask me something");
+    match(await session.waitFor(reply), /nobody at a keyboard to answer that/);
+    await session.end();
+  });
+
   it("refuses everything under --approval deny, and says what it skipped", async () => {
     const dir = workspace();
     const session = start({ dir, scenario: "ask", args: ["--no-state", "--approval", "deny"] });

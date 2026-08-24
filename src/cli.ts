@@ -43,7 +43,8 @@ Options:
   --approval <mode>         What to do when the agent asks permission for a tool,
                             or asks a question:
                               ask    post it to the thread and wait (default)
-                              allow  approve every gated tool, unattended
+                              allow  approve every gated tool, unattended;
+                                     a question still waits
                               deny   refuse every gated tool, unattended
   --allowed-tools <list>    Passed to claude, e.g. "Read Grep Bash(git *)"
   --disallowed-tools <list> Passed to claude
