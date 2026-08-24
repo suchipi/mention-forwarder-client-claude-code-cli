@@ -67,8 +67,21 @@ if [[ ! -f $forwarder_config ]]; then
   ' "$repo" "$agent_cwd" "$client_config" "$trigger" > "$forwarder_config"
   say "wrote $forwarder_config"
 fi
+# Written rather than copied from the example, which spells out every setting and
+# so names files that would not exist beside the copy.
 if [[ ! -f $client_config ]]; then
-  cp "$repo/mention-forwarder-claude-code.config.example.json" "$client_config"
+  cat > "$client_config" <<JSON
+{
+  "\$schema": "$repo/mention-forwarder-claude-code.config.schema.json",
+  "model": "opus",
+  "effort": "high",
+  "approval": "ask",
+  "permissionMode": "acceptEdits",
+  "progress": "all",
+  "askTimeoutSeconds": 0,
+  "logLevel": "info"
+}
+JSON
   say "wrote $client_config"
 fi
 if [[ ! -f $forwarder_env ]]; then

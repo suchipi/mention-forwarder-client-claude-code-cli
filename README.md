@@ -292,6 +292,7 @@ Anything you would otherwise pass as a flag can live in `mention-forwarder-claud
 
 ```json
 {
+  "$schema": "./mention-forwarder-claude-code.config.schema.json",
   "model": "opus",
   "effort": "high",
   "approval": "ask",
@@ -321,7 +322,19 @@ Anything you would otherwise pass as a flag can live in `mention-forwarder-claud
 
 **A flag wins over the file, which wins over the built-in default.** A misspelled setting is refused at startup rather than ignored, and so is one of the wrong type.
 
-A copy of the file above is in [mention-forwarder-claude-code.config.example.json](./mention-forwarder-claude-code.config.example.json).
+[mention-forwarder-claude-code.config.example.json](./mention-forwarder-claude-code.config.example.json) spells out every setting with a value, rather than the handful above, so copy it and delete whatever you do not need. Nothing in it is required. Three of its settings name a file, and their relative paths are taken from wherever you put your copy: `stateFile` and `recordFile` are created for you, but `patternsFile` has to point at a module that exists, so delete that line unless you have written one.
+
+### Descriptions while you write it
+
+That `$schema` line is what makes an editor describe the file to you. [mention-forwarder-claude-code.config.schema.json](./mention-forwarder-claude-code.config.schema.json) is a JSON Schema of every setting, so VS Code, and anything else that reads one, will complete the keys, show what each one means and what it takes when you hover it, and mark a misspelled key or an invalid value while you type rather than at startup. `$schema` is the one key here that is not a setting: the program accepts it and ignores it.
+
+The path is taken relative to the config file itself, so what you write depends on where yours sits next to this checkout:
+
+```json
+{
+  "$schema": "../mention-forwarder-client-claude-code-cli/mention-forwarder-claude-code.config.schema.json"
+}
+```
 
 ## Sessions that outlive the process
 

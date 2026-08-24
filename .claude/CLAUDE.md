@@ -53,9 +53,11 @@ These are load-bearing across several files and are easy to break with a local-l
 
 ## Changing things
 
-**Adding an option** touches four places, and the tests will not catch a missed one: `cli.ts` (the `parseArgs` map and the `HELP` text), `options.ts` (`Flags`, `Options`, `resolveOptions`), `config-file.ts` (the `ConfigFile` type plus the `STRING_FIELDS` / `STRING_LIST_FIELDS` / `NUMBER_FIELDS` / `PATH_FIELDS` lists), and the two README tables under "Settings" and "Options". Unknown or wrongly typed config keys are refused at startup, so a field missing from those lists makes a valid config an error.
+**Adding an option** touches five places, and only the last of them is checked by a test: `cli.ts` (the `parseArgs` map and the `HELP` text), `options.ts` (`Flags`, `Options`, `resolveOptions`), `config-file.ts` (the `ConfigFile` type plus the `STRING_FIELDS` / `STRING_LIST_FIELDS` / `NUMBER_FIELDS` / `PATH_FIELDS` lists), the two README tables under "Settings" and "Options", and `mention-forwarder-claude-code.config.schema.json`. Unknown or wrongly typed config keys are refused at startup, so a field missing from those lists makes a valid config an error.
 
 **The README is a test fixture.** `test/directive.test.ts` parses the word lists out of it and asserts they equal `INTERRUPT_WORDS` and `EXIT_WORDS` (`src/directive.ts`) and `APPROVALS` (`src/answer.ts`). Changing any of those sets, or the README headings `## Stopping a turn`, `## Ending the process`, and `### How to answer`, or the first fenced block under each, fails the test.
+
+**The settings schema is a test fixture too.** `test/config-schema.test.ts` asserts that `mention-forwarder-claude-code.config.schema.json` describes exactly `KNOWN_FIELDS` (`src/config-file.ts`) and that its `enum` lists equal `EFFORT_LEVELS`, `PERMISSION_MODES`, `APPROVAL_MODES`, `PROGRESS_MODES`, and `LEVELS`. What no test can check is whether the prose is still true, and that prose is what somebody hovers in their editor: a setting whose behavior changes needs its `description`, `markdownDescription`, and `enumDescriptions` changed with it. A config file may carry `$schema` itself, which `config-file.ts` accepts and ignores.
 
 **`test/patterns.test.ts` holds real `claude` output**, copied from actual runs with long fields shortened. When a release changes a shape, add the new event there; that file is the record of what this program supports.
 

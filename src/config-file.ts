@@ -49,6 +49,11 @@ const STRING_FIELDS = [
 ] as const;
 const STRING_LIST_FIELDS = ["addDirs", "claudeArgs"] as const;
 const NUMBER_FIELDS = ["askTimeoutSeconds"] as const;
+/** Every setting the file may hold. `mention-forwarder-claude-code.config.schema.json` is checked against it. */
+export const KNOWN_FIELDS: readonly string[] = [...STRING_FIELDS, ...STRING_LIST_FIELDS, ...NUMBER_FIELDS];
+
+/** Editors read `$schema` to offer hovers and completion in the config file; this program never does. */
+const IGNORED_FIELDS: readonly string[] = ["$schema"];
 const PATH_FIELDS: readonly string[] = ["cwd", "stateFile", "patternsFile", "recordFile"];
 const PATH_LIST_FIELDS: readonly string[] = ["addDirs"];
 
@@ -82,10 +87,9 @@ export function readConfigFile(path: string | undefined): ConfigFile {
   }
 
   const record = parsed as Record<string, unknown>;
-  const known: readonly string[] = [...STRING_FIELDS, ...STRING_LIST_FIELDS, ...NUMBER_FIELDS];
   for (const key of Object.keys(record)) {
-    if (!known.includes(key)) {
-      throw new ConfigError(`${file} has an unknown setting "${key}". It takes: ${known.join(", ")}.`);
+    if (!KNOWN_FIELDS.includes(key) && !IGNORED_FIELDS.includes(key)) {
+      throw new ConfigError(`${file} has an unknown setting "${key}". It takes: ${KNOWN_FIELDS.join(", ")}.`);
     }
   }
 

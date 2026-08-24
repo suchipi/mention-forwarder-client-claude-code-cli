@@ -1,9 +1,19 @@
 {
+  "$schema": "./mention-forwarder-claude-code.config.schema.json",
+  "binary": "claude",
+  "cwd": ".",
   "model": "opus",
   "effort": "high",
-  "approval": "ask",
   "permissionMode": "acceptEdits",
+  "approval": "ask",
+  "allowedTools": "Read Grep Bash(git *)",
+  "disallowedTools": "Bash(rm *)",
+  "addDirs": [],
+  "claudeArgs": [],
   "progress": "all",
   "askTimeoutSeconds": 0,
+  "stateFile": "./sessions.json",
+  "patternsFile": "./patterns.example.mjs",
+  "recordFile": "./events.jsonl",
   "logLevel": "info"
 }

@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mention-forwarder-claude-code config",
+  "description": "Settings for the mention-forwarder Claude Code client. Every setting here has a matching command-line flag, and the flag wins over the file, which wins over the built-in default. A misspelled setting is refused at startup rather than ignored, and so is one of the wrong type.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL or path of this JSON Schema. Read by your editor and ignored by the program."
+    },
+    "binary": {
+      "type": "string",
+      "default": "claude",
+      "description": "The program to run. Use an absolute path if mention-forwarder's PATH is not your shell's.\n\nSame as --binary.",
+      "markdownDescription": "The program to run. Use an absolute path if mention-forwarder's `PATH` is not your shell's.\n\nSame as `--binary`.",
+      "examples": ["claude", "/opt/homebrew/bin/claude"]
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Directory to run claude in. A relative path is resolved against this config file's own directory, not the working directory.\n\nmention-forwarder's own cwd already sets this, so it is only needed to point somewhere else. Defaults to the directory this program was started in.\n\nA remembered session is only reused for the same cwd, because Claude Code files sessions under the directory it ran in.\n\nSame as --cwd.",
+      "markdownDescription": "Directory to run `claude` in. A relative path is resolved against **this config file's own directory**, not the working directory.\n\nmention-forwarder's own `cwd` already sets this, so it is only needed to point somewhere else. Defaults to the directory this program was started in.\n\nA remembered session is only reused for the same `cwd`, because Claude Code files sessions under the directory it ran in.\n\nSame as `--cwd`.",
+      "examples": ["repo", "/Users/you/Code/project"]
+    },
+    "model": {
+      "type": "string",
+      "description": "Model new threads start on. Defaults to the CLI's own default.\n\nAny name the claude CLI accepts works, which is not a fixed list: an alias for the latest of a family, such as fable, opus, sonnet, or haiku, or a full id such as claude-opus-5.\n\nTo print every id the API currently offers:\n\n  curl -s https://api.anthropic.com/v1/models -H \"x-api-key: $ANTHROPIC_API_KEY\" -H \"anthropic-version: 2023-06-01\" | jq -r '.data[].id'\n\nThat needs an API key in the environment, and it answers with ids only, so the aliases above are not in it.\n\nA thread can change it mid-conversation by writing a group like [model=sonnet] in a mention; changing the model restarts the claude process on the same session id, so the thread keeps its history.\n\nSame as --model.",
+      "markdownDescription": "Model new threads start on. Defaults to the CLI's own default.\n\nAny name the `claude` CLI accepts works, which is not a fixed list: an alias for the latest of a family, such as `fable`, `opus`, `sonnet`, or `haiku`, or a full id such as `claude-opus-5`.\n\nTo print every id the API currently offers:\n\n```sh\ncurl -s https://api.anthropic.com/v1/models -H \"x-api-key: $ANTHROPIC_API_KEY\" -H \"anthropic-version: 2023-06-01\" | jq -r '.data[].id'\n```\n\nThat needs an API key in the environment, and it answers with ids only, so the aliases above are not in it.\n\nA thread can change it mid-conversation by writing a group like `[model=sonnet]` in a mention; changing the model restarts the `claude` process on the same session id, so the thread keeps its history.\n\nSame as `--model`.",
+      "examples": ["opus", "sonnet", "haiku", "claude-opus-5"]
+    },
+    "effort": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "xhigh", "max"],
+      "description": "How much reasoning effort new threads start with. Defaults to the CLI's own default.\n\nOne of:\n- low: least reasoning, fastest and cheapest turns\n- medium: a middle setting\n- high: more reasoning per turn\n- xhigh: more still\n- max: the most reasoning, slowest and most expensive turns\n\nA thread can change it mid-conversation with a group like [effort=high]; that restarts the claude process on the same session id, so the thread keeps its history.\n\nSame as --effort.",
+      "markdownDescription": "How much reasoning effort new threads start with. Defaults to the CLI's own default.\n\nOne of:\n\n- `low`: least reasoning, fastest and cheapest turns\n- `medium`: a middle setting\n- `high`: more reasoning per turn\n- `xhigh`: more still\n- `max`: the most reasoning, slowest and most expensive turns\n\nA thread can change it mid-conversation with a group like `[effort=high]`; that restarts the `claude` process on the same session id, so the thread keeps its history.\n\nSame as `--effort`.",
+      "enumDescriptions": [
+        "Least reasoning, fastest and cheapest turns.",
+        "A middle setting.",
+        "More reasoning per turn.",
+        "More still.",
+        "The most reasoning, slowest and most expensive turns."
+      ]
+    },
+    "permissionMode": {
+      "type": "string",
+      "enum": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"],
+      "description": "Passed to claude as --permission-mode. Checked here so a typo fails at startup rather than mid-thread. Defaults to the CLI's own default.\n\nOne of:\n- default: the CLI's normal behavior, asking before anything that changes something\n- acceptEdits: edits to files are made without asking; other actions still ask\n- bypassPermissions: nothing asks, so only for a directory you are willing to let the agent do anything in\n- plan: the agent researches and proposes, and does not change anything\n- dontAsk: do not ask; carry on without the action rather than waiting\n- auto: the CLI decides per action\n\nThis decides which actions need permission at all; the approval setting decides what happens to the ones that do.\n\nSame as --permission-mode.",
+      "markdownDescription": "Passed to `claude` as `--permission-mode`. Checked here so a typo fails at startup rather than mid-thread. Defaults to the CLI's own default.\n\nOne of:\n\n- `default`: the CLI's normal behavior, asking before anything that changes something\n- `acceptEdits`: edits to files are made without asking; other actions still ask\n- `bypassPermissions`: nothing asks, so only for a directory you are willing to let the agent do anything in\n- `plan`: the agent researches and proposes, and does not change anything\n- `dontAsk`: do not ask; carry on without the action rather than waiting\n- `auto`: the CLI decides per action\n\nThis decides which actions need permission at all; `approval` decides what happens to the ones that do.\n\nSame as `--permission-mode`.",
+      "enumDescriptions": [
+        "The CLI's normal behavior: ask before anything that changes something.",
+        "Edits to files are made without asking; other actions still ask.",
+        "Nothing asks. Only for a directory you are willing to let the agent do anything in.",
+        "Plan mode: the agent researches and proposes, and does not change anything.",
+        "Do not ask; carry on without the action rather than waiting.",
+        "The CLI decides per action."
+      ]
+    },
+    "approval": {
+      "type": "string",
+      "enum": ["ask", "allow", "deny"],
+      "default": "ask",
+      "description": "What to do when the agent asks for permission to run a tool, or asks a question with AskUserQuestion.\n\nOne of:\n- ask (the default): the request is posted to the thread and the turn waits for somebody to answer. Reply approve to allow a tool; any other reply refuses it and is given to the agent as the reason\n- allow: every gated tool is approved unattended. A question still goes to the thread and the turn still waits, since approving one would not answer it\n- deny: every gated tool is refused unattended, and what the agent wanted to run is listed in the thread when the turn ends. A question is refused with a note telling the agent to put it in its reply instead\n\nOnly one ask can be parked at a time, because only the next comment in the thread can answer it.\n\nSame as --approval.",
+      "markdownDescription": "What to do when the agent asks for permission to run a tool, or asks a question with `AskUserQuestion`.\n\nOne of `ask` (the default), `allow`, or `deny`:\n\n| Mode | A tool that needs permission | A question the agent asks |\n| --- | --- | --- |\n| `ask` | Posted to the thread; the turn waits for somebody to answer. Reply `approve` to allow it; any other reply refuses it and is given to the agent as the reason. | Posted with its options; the turn waits. |\n| `allow` | Approved, unattended. | Posted with its options; the turn waits. A question is the one thing `allow` does not approve, since approving it would not produce an answer. |\n| `deny` | Refused, unattended. What it wanted to run is listed when the turn ends. | Refused, with a note telling the agent to put the question in its reply instead. |\n\nOnly one ask can be parked at a time, because only the next comment in the thread can answer it.\n\nSame as `--approval`.",
+      "enumDescriptions": [
+        "Post the request to the thread and wait for a person to answer. Reply `approve` to allow a tool; any other reply refuses it and is given to the agent as the reason.",
+        "Approve every gated tool unattended. A question still goes to the thread and the turn still waits, since approving one would not answer it.",
+        "Refuse every gated tool unattended, and list what the agent wanted to run when the turn ends. A question is refused with a note telling the agent to put it in its reply instead."
+      ]
+    },
+    "allowedTools": {
+      "type": "string",
+      "description": "Passed to claude as --allowed-tools: tools the agent may use without asking.\n\nOne string, with the entries separated by spaces.\n\nSame as --allowed-tools.",
+      "markdownDescription": "Passed to `claude` as `--allowed-tools`: tools the agent may use without asking.\n\nOne string, with the entries separated by spaces.\n\nSame as `--allowed-tools`.",
+      "examples": ["Read Grep Bash(git *)"]
+    },
+    "disallowedTools": {
+      "type": "string",
+      "description": "Passed to claude as --disallowed-tools: tools the agent may not use at all.\n\nOne string, with the entries separated by spaces.\n\nSame as --disallowed-tools.",
+      "markdownDescription": "Passed to `claude` as `--disallowed-tools`: tools the agent may not use at all.\n\nOne string, with the entries separated by spaces.\n\nSame as `--disallowed-tools`.",
+      "examples": ["Bash(rm *) WebFetch"]
+    },
+    "addDirs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other directories the agent may touch, besides cwd. Each relative path is resolved against this config file's own directory.\n\nSame as repeating --add-dir.",
+      "markdownDescription": "Other directories the agent may touch, besides `cwd`. Each relative path is resolved against **this config file's own directory**.\n\nSame as repeating `--add-dir`.",
+      "examples": [["../shared", "/Users/you/Code/other-repo"]]
+    },
+    "claudeArgs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extra arguments passed to claude untouched, after everything this program sets. Use this for a flag that has no setting of its own.\n\nSame as repeating --claude-arg.",
+      "markdownDescription": "Extra arguments passed to `claude` untouched, after everything this program sets. Use this for a flag that has no setting of its own.\n\nSame as repeating `--claude-arg`.",
+      "examples": [["--mcp-config", "./mcp.json"]]
+    },
+    "progress": {
+      "type": "string",
+      "enum": ["all", "final"],
+      "default": "all",
+      "description": "Whether the thread sees the agent working, or only its answer.\n\nOne of:\n- all (the default): post what the agent says as it says it, so the thread follows along\n- final: post only the agent's answer at the end of the turn\n\nSame as --progress.",
+      "markdownDescription": "Whether the thread sees the agent working, or only its answer.\n\nOne of:\n\n- `all` (the default): post what the agent says as it says it, so the thread follows along\n- `final`: post only the agent's answer at the end of the turn\n\nSame as `--progress`.",
+      "enumDescriptions": [
+        "Post what the agent says as it says it, so the thread follows along.",
+        "Post only the agent's answer at the end of the turn."
+      ]
+    },
+    "askTimeoutSeconds": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0,
+      "description": "How long a parked request waits for a person before it is refused. 0 waits forever.\n\nSame as --ask-timeout.",
+      "markdownDescription": "How long a parked request waits for a person before it is refused. `0` waits forever.\n\nSame as `--ask-timeout`.",
+      "examples": [0, 3600]
+    },
+    "stateFile": {
+      "type": "string",
+      "description": "Where conversation-to-session ids are remembered, so a thread keeps its history across restarts of this program. A relative path is resolved against this config file's own directory.\n\nDefaults to $XDG_STATE_HOME/mention-forwarder-claude-code/sessions.json, or ~/.local/state/mention-forwarder-claude-code/sessions.json. There is no setting for --no-state; pass that flag to remember nothing.\n\nSame as --state-file.",
+      "markdownDescription": "Where conversation-to-session ids are remembered, so a thread keeps its history across restarts of this program. A relative path is resolved against **this config file's own directory**.\n\nDefaults to `$XDG_STATE_HOME/mention-forwarder-claude-code/sessions.json`, or `~/.local/state/mention-forwarder-claude-code/sessions.json`. There is no setting for `--no-state`; pass that flag to remember nothing.\n\nSame as `--state-file`.",
+      "examples": ["./sessions.json"]
+    },
+    "patternsFile": {
+      "type": "string",
+      "description": "A JavaScript module that patches how this program reads claude's output, for when a claude release changes an event shape. A relative path is resolved against this config file's own directory.\n\nSee patterns.example.mjs and the README section on reading claude's output.\n\nSame as --patterns.",
+      "markdownDescription": "A JavaScript module that patches how this program reads `claude`'s output, for when a `claude` release changes an event shape. A relative path is resolved against **this config file's own directory**.\n\nSee [patterns.example.mjs](./patterns.example.mjs) and the README section on reading `claude`'s output.\n\nSame as `--patterns`.",
+      "examples": ["./patterns.mjs"]
+    },
+    "recordFile": {
+      "type": "string",
+      "description": "Append every raw event from claude to this file, for debugging or for writing a patterns file. A relative path is resolved against this config file's own directory.\n\nSame as --record.",
+      "markdownDescription": "Append every raw event from `claude` to this file, for debugging or for writing a patterns file. A relative path is resolved against **this config file's own directory**.\n\nSame as `--record`.",
+      "examples": ["./events.jsonl"]
+    },
+    "logLevel": {
+      "type": "string",
+      "enum": ["debug", "info", "warn", "error"],
+      "default": "info",
+      "description": "How much this program writes to its own stderr. It has no effect on what lands in a thread.\n\nOne of:\n- debug: everything, including the agent's thinking, tool results, and every event no pattern claimed\n- info (the default): turns starting and ending, and anything worth noticing\n- warn: only problems this program worked around\n- error: only what stopped something from working\n\nSame as --log-level.",
+      "markdownDescription": "How much this program writes to its own stderr. It has no effect on what lands in a thread.\n\nOne of:\n\n- `debug`: everything, including the agent's thinking, tool results, and every event no pattern claimed\n- `info` (the default): turns starting and ending, and anything worth noticing\n- `warn`: only problems this program worked around\n- `error`: only what stopped something from working\n\nSame as `--log-level`.",
+      "enumDescriptions": [
+        "Everything, including the agent's thinking, tool results, and every event no pattern claimed.",
+        "Turns starting and ending, and anything worth noticing.",
+        "Only problems this program worked around.",
+        "Only what stopped something from working."
+      ]
+    }
+  }
+}

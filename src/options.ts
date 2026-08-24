@@ -53,9 +53,9 @@ export type Flags = {
   "log-level"?: string | undefined;
 };
 
-const APPROVAL_MODES: readonly string[] = ["ask", "allow", "deny"];
-const PROGRESS_MODES: readonly string[] = ["all", "final"];
-const LEVELS: readonly string[] = ["debug", "info", "warn", "error"];
+export const APPROVAL_MODES: readonly string[] = ["ask", "allow", "deny"];
+export const PROGRESS_MODES: readonly string[] = ["all", "final"];
+export const LEVELS: readonly string[] = ["debug", "info", "warn", "error"];
 
 /** What `claude --permission-mode` takes. Checked here so a typo fails at startup, not mid-thread. */
 export const PERMISSION_MODES: readonly string[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
