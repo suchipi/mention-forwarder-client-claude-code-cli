@@ -114,6 +114,24 @@ describe("driving the claude CLI", () => {
     match(told, /please look at the flaky test/);
   });
 
+  it("hands claude the operator's own instructions, after its own", async () => {
+    const dir = workspace();
+    const argvFile = join(dir, "argv.json");
+    const session = start({
+      dir,
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+      args: ["--no-state", "--append-system-prompt", "Work on a branch of your own."],
+    });
+
+    await session.waitFor(session.send("first"));
+    await session.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    const prompt = argv[argv.indexOf("--append-system-prompt") + 1] ?? "";
+    match(prompt, /posted back to the thread/);
+    ok(prompt.endsWith("Work on a branch of your own."), prompt);
+  });
+
   it("opens the session once and keeps it for later mentions", async () => {
     const dir = workspace();
     const transcript = join(dir, "transcript.txt");

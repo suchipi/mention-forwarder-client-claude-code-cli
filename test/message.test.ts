@@ -1,4 +1,4 @@
-import { doesNotMatch, match, strictEqual } from "node:assert/strict";
+import { doesNotMatch, match, ok, strictEqual } from "node:assert/strict";
 import { describe, it } from "node:test";
 import * as say from "../src/message.ts";
 import type { Mention } from "../src/mention.ts";
@@ -62,6 +62,17 @@ describe("what the agent is told", () => {
     match(say.systemPrompt("ask"), /waits there until somebody answers/);
     match(say.systemPrompt("allow"), /approved automatically/);
     match(say.systemPrompt("deny"), /refused automatically/);
+  });
+
+  it("gives the operator the last word in the system prompt", () => {
+    const prompt = say.systemPrompt("ask", "  Work on a branch of your own.  ");
+    match(prompt, /waits there until somebody answers/);
+    ok(prompt.endsWith("\n\nWork on a branch of your own."), prompt);
+  });
+
+  it("adds nothing when the operator said nothing", () => {
+    strictEqual(say.systemPrompt("ask", "   "), say.systemPrompt("ask"));
+    strictEqual(say.systemPrompt("ask", undefined), say.systemPrompt("ask"));
   });
 });
 

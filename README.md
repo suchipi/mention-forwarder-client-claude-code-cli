@@ -121,6 +121,18 @@ also update the changelog
 
 A few lines are also appended to the session's system prompt, because Claude Code otherwise has every reason to believe it is talking to somebody at a terminal: that its replies are posted as comments, that nobody is at a keyboard, and how long an answer takes to come back. What it says depends on `--approval`.
 
+### Telling it something of your own
+
+`appendSystemPrompt` goes after those lines, at the end of the system prompt, so it is where standing instructions belong: where to do the work, a house style for replies, anything every thread should be told.
+
+```json
+{
+  "appendSystemPrompt": "Before you change anything, make a git worktree and a branch named after the thread, and do the work there."
+}
+```
+
+It applies to every thread this process handles, and unlike the model, a thread cannot change it mid-conversation. `--append-system-prompt` is the same thing as a flag.
+
 ## What gets posted back
 
 Each finished block of prose from the **main agent** is appended to the mention's reply file, so a long run reports as it goes rather than staying silent. mention-forwarder posts each settled batch, so several blocks close together arrive as one comment and blocks further apart arrive as separate ones. Pass `--progress final` to post only the answer, once the turn is done.
@@ -309,6 +321,7 @@ Anything you would otherwise pass as a flag can live in `mention-forwarder-claud
 | `effort` | `--effort` |
 | `permissionMode` | `--permission-mode` |
 | `approval` | `--approval` |
+| `appendSystemPrompt` | `--append-system-prompt` |
 | `allowedTools` | `--allowed-tools` |
 | `disallowedTools` | `--disallowed-tools` |
 | `addDirs` | `--add-dir`, a list of paths taken relative to the config file |
@@ -353,6 +366,7 @@ Entries are only reused for the same working directory, because Claude Code file
 | `--effort <level>` | the CLI's own default | `low`, `medium`, `high`, `xhigh`, or `max`. |
 | `--permission-mode <mode>` | the CLI's own default | Passed to `claude`: `default`, `acceptEdits`, `plan`, `dontAsk`, `auto`, or `bypassPermissions`. |
 | `--approval <mode>` | `ask` | What to do when the agent asks. See [Approvals and questions](#approvals-and-questions). |
+| `--append-system-prompt <text>` | | Instructions added to the end of the system prompt every thread starts with. See [Telling it something of your own](#telling-it-something-of-your-own). |
 | `--allowed-tools <list>` | | Passed to `claude`, e.g. `"Read Grep Bash(git *)"`. |
 | `--disallowed-tools <list>` | | Passed to `claude`. |
 | `--add-dir <path>` | | Another directory the agent may touch. Repeatable. |

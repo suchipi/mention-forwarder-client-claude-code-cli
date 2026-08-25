@@ -78,6 +78,13 @@ describe("resolving the options", () => {
     match(resolveOptions({}).stateFile ?? "", /mention-forwarder-claude-code[/\\]sessions\.json$/);
   });
 
+  it("takes the extra system prompt from the file, and lets a flag win over it", () => {
+    const config = configFile("prompt.json", { appendSystemPrompt: "Work on a branch of your own." });
+    strictEqual(resolveOptions({ config }).appendSystemPrompt, "Work on a branch of your own.");
+    strictEqual(resolveOptions({ config, "append-system-prompt": "Stay on main." }).appendSystemPrompt, "Stay on main.");
+    strictEqual(resolveOptions({}).appendSystemPrompt, undefined);
+  });
+
   it("keeps claude's own arguments in the order they were given", () => {
     const options = resolveOptions({ "claude-arg": ["--mcp-config", "servers.json"] });
     deepStrictEqual(options.extraArgs, ["--mcp-config", "servers.json"]);

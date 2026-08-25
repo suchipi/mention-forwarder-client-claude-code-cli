@@ -10,8 +10,11 @@ const MAX_ARGUMENT_CHARS = 300;
  * Appended to the session's system prompt. Claude Code otherwise has every
  * reason to believe it is talking to someone at a terminal, and the difference
  * decides how it writes and whether it stops to ask.
+ *
+ * `extra` is whatever the operator put in `appendSystemPrompt`, added last so
+ * their standing instructions read as the final word on how the bot behaves.
  */
-export function systemPrompt(approval: ApprovalMode): string {
+export function systemPrompt(approval: ApprovalMode, extra?: string): string {
   const waiting: Record<ApprovalMode, string> = {
     ask: "When you need permission to run a tool, or ask a question with AskUserQuestion, it is posted to the thread and your turn waits there until somebody answers, which can take hours. Do everything that does not depend on the answer first.",
     allow:
@@ -24,6 +27,7 @@ export function systemPrompt(approval: ApprovalMode): string {
     "Everything you say in reply is posted back to the thread the mention came from, as a comment. Write for the people reading it there, not for a terminal: no ANSI colour, no clearing the screen, no assuming anyone can see your working directory.",
     "Nobody is at a keyboard. A person sees your reply only once it is posted as a comment, and answers by writing another comment, which reaches you as a further turn in this session.",
     waiting[approval],
+    ...(extra === undefined || extra.trim() === "" ? [] : [extra.trim()]),
   ].join("\n\n");
 }
 

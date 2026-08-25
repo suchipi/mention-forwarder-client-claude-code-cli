@@ -17,6 +17,8 @@ export type Options = {
   effort: string | undefined;
   permissionMode: string | undefined;
   approval: ApprovalMode;
+  /** Operator instructions added to the end of the system prompt, or undefined for none. */
+  appendSystemPrompt: string | undefined;
   allowedTools: string | undefined;
   disallowedTools: string | undefined;
   addDirs: string[];
@@ -40,6 +42,7 @@ export type Flags = {
   effort?: string | undefined;
   "permission-mode"?: string | undefined;
   approval?: string | undefined;
+  "append-system-prompt"?: string | undefined;
   "allowed-tools"?: string | undefined;
   "disallowed-tools"?: string | undefined;
   "add-dir"?: string[] | undefined;
@@ -105,6 +108,7 @@ export function resolveOptions(flags: Flags): Options {
     effort: optional("--effort", effort, EFFORT_LEVELS),
     permissionMode: optional("--permission-mode", flags["permission-mode"] ?? config.permissionMode, PERMISSION_MODES),
     approval: pick("--approval", flags.approval ?? config.approval ?? "ask", APPROVAL_MODES) as ApprovalMode,
+    appendSystemPrompt: flags["append-system-prompt"] ?? config.appendSystemPrompt,
     allowedTools: flags["allowed-tools"] ?? config.allowedTools,
     disallowedTools: flags["disallowed-tools"] ?? config.disallowedTools,
     addDirs: (flags["add-dir"] ?? config.addDirs ?? []).map((one) => resolve(one)),

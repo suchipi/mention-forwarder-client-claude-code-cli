@@ -67,6 +67,12 @@
         "Refuse every gated tool unattended, and list what the agent wanted to run when the turn ends. A question is refused with a note telling the agent to put it in its reply instead."
       ]
     },
+    "appendSystemPrompt": {
+      "type": "string",
+      "description": "Extra instructions added to the end of the system prompt every thread starts with.\n\nThis program already tells the agent that it is a bot answering @-mentions forwarded from GitHub, Slack, and Linear, that whatever it says is posted back to the thread as a comment, and how long an answer from a person takes to come back. What you write here is added after all of that, so it is the place for standing instructions of your own: where to do the work, a house style for replies, anything every thread should be told.\n\nPassed to claude as --append-system-prompt, so it also covers the flag having no other setting. It applies to every thread this process handles, and a thread cannot change it mid-conversation.\n\nSame as --append-system-prompt.",
+      "markdownDescription": "Extra instructions added to the end of the system prompt every thread starts with.\n\nThis program already tells the agent that it is a bot answering @-mentions forwarded from GitHub, Slack, and Linear, that whatever it says is posted back to the thread as a comment, and how long an answer from a person takes to come back. What you write here is added after all of that, so it is the place for standing instructions of your own: where to do the work, a house style for replies, anything every thread should be told.\n\nPassed to `claude` as `--append-system-prompt`, so it also covers the flag having no other setting. It applies to every thread this process handles, and a thread cannot change it mid-conversation.\n\nSame as `--append-system-prompt`.",
+      "examples": ["Before you change anything, make a git worktree and a branch named after the thread, and do the work there."]
+    },
     "allowedTools": {
       "type": "string",
       "description": "Passed to claude as --allowed-tools: tools the agent may use without asking.\n\nOne string, with the entries separated by spaces.\n\nSame as --allowed-tools.",

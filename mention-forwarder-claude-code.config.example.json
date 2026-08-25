@@ -6,6 +6,7 @@
   "effort": "high",
   "permissionMode": "acceptEdits",
   "approval": "ask",
+  "appendSystemPrompt": "Before you change anything, make a git worktree and a branch named after the thread, and do the work there.",
   "allowedTools": "Read Grep Bash(git *)",
   "disallowedTools": "Bash(rm *)",
   "addDirs": [],

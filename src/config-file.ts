@@ -15,6 +15,8 @@ export type ConfigFile = {
   effort?: string;
   permissionMode?: string;
   approval?: string;
+  /** Added to the end of the system prompt this program builds. */
+  appendSystemPrompt?: string;
   allowedTools?: string;
   disallowedTools?: string;
   /** Paths, resolved against the config file's own directory. */
@@ -39,6 +41,7 @@ const STRING_FIELDS = [
   "effort",
   "permissionMode",
   "approval",
+  "appendSystemPrompt",
   "allowedTools",
   "disallowedTools",
   "progress",

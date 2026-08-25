@@ -340,7 +340,7 @@ export function createConversation({ options, rules, store, reply, log }: Conver
       allowedTools: options.allowedTools,
       disallowedTools: options.disallowedTools,
       addDirs: options.addDirs,
-      appendSystemPrompt: say.systemPrompt(options.approval),
+      appendSystemPrompt: say.systemPrompt(options.approval, options.appendSystemPrompt),
       extraArgs: options.extraArgs,
       rules,
       recordPath: options.recordPath,

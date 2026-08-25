@@ -46,6 +46,10 @@ Options:
                               allow  approve every gated tool, unattended;
                                      a question still waits
                               deny   refuse every gated tool, unattended
+  --append-system-prompt <text>
+                            Extra instructions added to the end of the system
+                            prompt every thread starts with, e.g. "Work on a new
+                            git worktree and branch for each thread."
   --allowed-tools <list>    Passed to claude, e.g. "Read Grep Bash(git *)"
   --disallowed-tools <list> Passed to claude
   --add-dir <path>          Another directory the agent may touch (repeatable)
@@ -75,6 +79,7 @@ async function main(): Promise<void> {
       effort: { type: "string" },
       "permission-mode": { type: "string" },
       approval: { type: "string" },
+      "append-system-prompt": { type: "string" },
       "allowed-tools": { type: "string" },
       "disallowed-tools": { type: "string" },
       "add-dir": { type: "string", multiple: true },
