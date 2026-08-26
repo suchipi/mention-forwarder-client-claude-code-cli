@@ -129,8 +129,8 @@ describe("what the agent is told", () => {
     match(say.refusalFrom(mention, "   "), /^@suchipi did not approve it\.$/);
   });
 
-  it("warns the agent that a comment can reach it part-way through a turn", () => {
-    match(say.systemPrompt("ask"), /part-way through the turn you are on/);
+  it("tells the agent that an answer comes back as a further turn", () => {
+    match(say.systemPrompt("ask"), /reaches you as a further turn in this session/);
   });
 
   it("prefers the prompt over the raw text, and falls back when the prompt is empty", () => {
