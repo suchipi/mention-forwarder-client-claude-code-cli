@@ -135,7 +135,7 @@ The thread's link is the mention's own permalink, from whichever mention started
 
 ```json
 {
-  "appendSystemPrompt": "Before you change anything, make a git worktree and a branch named after the thread, and do the work there."
+  "appendSystemPrompt": "Before you change anything, make a git worktree and a branch, and do the work there. Name the branch after the work in kebab-case, prefixed with the ticket id when the thread names one, and rename it before opening a pull request if the id only turns up later."
 }
 ```
 
