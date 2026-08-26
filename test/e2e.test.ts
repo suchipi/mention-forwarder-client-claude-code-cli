@@ -129,6 +129,7 @@ describe("driving the claude CLI", () => {
     const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
     const prompt = argv[argv.indexOf("--append-system-prompt") + 1] ?? "";
     match(prompt, /posted back to the thread/);
+    match(prompt, /on github, at https:\/\/example\.com\/issues\/1#c1\./);
     ok(prompt.endsWith("Work on a branch of your own."), prompt);
   });
 

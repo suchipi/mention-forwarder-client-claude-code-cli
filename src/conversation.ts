@@ -326,7 +326,7 @@ export function createConversation({ options, rules, store, reply, log }: Conver
     drain();
   }
 
-  async function ensureRunning(): Promise<boolean> {
+  async function ensureRunning(mention: Mention): Promise<boolean> {
     if (claude?.running === true) return true;
 
     const resume = resumeFailed ? undefined : sessionId;
@@ -340,7 +340,7 @@ export function createConversation({ options, rules, store, reply, log }: Conver
       allowedTools: options.allowedTools,
       disallowedTools: options.disallowedTools,
       addDirs: options.addDirs,
-      appendSystemPrompt: say.systemPrompt(options.approval, options.appendSystemPrompt),
+      appendSystemPrompt: say.systemPrompt(options.approval, mention, options.appendSystemPrompt),
       extraArgs: options.extraArgs,
       rules,
       recordPath: options.recordPath,
@@ -360,7 +360,7 @@ export function createConversation({ options, rules, store, reply, log }: Conver
         resumeFailed = true;
         sessionId = undefined;
         if (conversationKey !== undefined) store.forget(conversationKey);
-        return ensureRunning();
+        return ensureRunning(mention);
       }
       return false;
     }
@@ -435,7 +435,7 @@ export function createConversation({ options, rules, store, reply, log }: Conver
   }
 
   async function run(mention: Mention, body: string): Promise<void> {
-    if (!(await ensureRunning())) {
+    if (!(await ensureRunning(mention))) {
       // An exit during startup is reported by onExit only once a turn is open,
       // which it is not yet, so this is the one place that says so.
       reportTo(mention, say.startupFailureNotice("it exited before it was ready; its output is in this command's log"));
