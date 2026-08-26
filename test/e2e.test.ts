@@ -1,4 +1,10 @@
-import { deepStrictEqual, match, ok, strictEqual } from "node:assert/strict";
+import {
+  deepStrictEqual,
+  doesNotMatch,
+  match,
+  ok,
+  strictEqual,
+} from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
@@ -162,10 +168,9 @@ describe("driving the claude CLI", () => {
 
     const told = readFileSync(transcript, "utf8");
     match(told, /\[test:1\] A test issue/);
-    match(told, /from @suchipi via github issue_comment/);
     match(told, /https:\/\/example\.com\/issues\/1#c1/);
     match(told, /posted back to that thread as a comment/);
-    match(told, /please look at the flaky test/);
+    match(told, /@suchipi said, via github issue_comment \(https:\S+\):\nplease look at the flaky test/);
   });
 
   it("hands claude the operator's own instructions, after its own", async () => {
@@ -242,7 +247,13 @@ describe("driving the claude CLI", () => {
 
   it("runs what followed the interrupt as the next turn", async () => {
     const dir = workspace();
-    const session = start({ dir, scenario: "hang", args: ["--no-state"] });
+    const transcript = join(dir, "transcript.txt");
+    const session = start({
+      dir,
+      scenario: "hang",
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+      args: ["--no-state"],
+    });
 
     session.send("do something that never finishes");
     const stopped = session.send("[stop] do this instead");
@@ -251,6 +262,15 @@ describe("driving the claude CLI", () => {
     // The stub only ever hangs on the first turn, so the second answers.
     match(await session.waitFor(stopped, "stub answered"), /do this instead/);
     await session.end();
+
+    // The label goes on what is left of the mention, never in front of the
+    // group: the other way round and the interrupt above never happens at all.
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 2);
+    match(turns[1] ?? "", /@suchipi said, via github issue_comment \(https:\S+\):\ndo this instead$/);
+    doesNotMatch(turns[1] ?? "", /\[stop\]/);
   });
 
   it("stops a turn that is waiting on a permission request", async () => {
@@ -368,7 +388,7 @@ describe("driving the claude CLI", () => {
     const second = session.send("no, that file is generated");
     match(
       await session.waitFor(second),
-      /stub was told: no, that file is generated/,
+      /stub was told: @suchipi refused it, in the thread: no, that file is generated/,
     );
     await session.end();
   });
@@ -387,7 +407,7 @@ describe("driving the claude CLI", () => {
     const second = session.send("spaces");
     match(
       await session.waitFor(second),
-      /The person you asked replied, in the thread: spaces/,
+      /@suchipi answered, in the thread: spaces/,
     );
     await session.end();
   });
@@ -420,7 +440,7 @@ describe("driving the claude CLI", () => {
     const second = session.send("spaces");
     match(
       await session.waitFor(second),
-      /The person you asked replied, in the thread: spaces/,
+      /@suchipi answered, in the thread: spaces/,
     );
     await session.end();
   });
@@ -482,8 +502,7 @@ describe("driving the claude CLI", () => {
     // A steer is told it is one, so the agent reads it as a change of course.
     const landed = readFileSync(steers, "utf8");
     match(landed, /while you were still working/);
-    match(landed, /from @suchipi via github issue_comment/);
-    match(landed, /second$/m);
+    match(landed, /@suchipi said, via github issue_comment \(https:\S+\):\nsecond$/m);
 
     // The answer went to the comment that steered it, not the one that started the turn.
     ok(

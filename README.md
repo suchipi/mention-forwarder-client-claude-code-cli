@@ -107,22 +107,23 @@ The first mention of a conversation opens the session with the whole context:
 
 ```
 [github:acme/widgets#7] Flaky test in CI
-from @suchipi via github issue_comment
-https://github.com/acme/widgets/issues/7#issuecomment-100
 
 You are answering an @-mention that mention-forwarder picked up. Whatever you say in reply is posted back to that thread as a comment, so write for the people reading it there. Later mentions in the same thread arrive as further turns in this session.
 
+@suchipi said, via github issue_comment (https://github.com/acme/widgets/issues/7#issuecomment-100):
 please fix the flaky test
 ```
 
 Every later mention in that conversation is shorter, because the session already holds everything above:
 
 ```
-from @suchipi via github issue_comment
-https://github.com/acme/widgets/issues/7#issuecomment-101
-
+@suchipi said, via github issue_comment (https://github.com/acme/widgets/issues/7#issuecomment-101):
 also update the changelog
 ```
+
+That label is the only place a message names anybody, and it is the last thing before the words it belongs to. A thread has more than one person in it, and the agent is asked to read the label before it attributes anything or quotes anybody, so nothing is allowed between the two. The permalink is parenthetical so that the colon ends the line and everything after it is what was actually said. A mention that carried no platform or no permalink leaves those parts out; one whose author is unknown says `someone`.
+
+The label goes on what is left of a mention once a `[...]` group has been taken off the front, so `[stop] do this instead` still stops the turn and then runs as its own. Were it the other way round the group would no longer be at the start, nothing would match it, and the turn it was meant to call off would keep going. An answer to a permission request or a question is named the same way when it reaches the agent.
 
 A few lines are also appended to the session's system prompt, because Claude Code otherwise has every reason to believe it is talking to somebody at a terminal: that its replies are posted as comments, that nobody is at a keyboard, where the thread is, and how long an answer takes to come back. What it says depends on `--approval`.
 
