@@ -554,15 +554,15 @@ export function createConversation({
     const running = turn;
     if (running === undefined) return;
 
-    // What is left of this turn belongs to whoever steered it, as it does when
-    // somebody answers a parked ask.
-    running.mention = mention;
     running.steers += 1;
     log.info("steering the running turn", {
       id: mention.id,
       steers: running.steers,
     });
-    post(say.steeredNotice());
+    // Only the acknowledgement belongs to whoever steered. Moving the turn's
+    // output here as well would post its answer under an unrelated comment,
+    // which on GitHub is a different review thread from the one that asked.
+    reply.append(mention.replyFile, say.steeredNotice(running.mention));
     claude?.send(say.steerMessage(mention, body));
   }
 

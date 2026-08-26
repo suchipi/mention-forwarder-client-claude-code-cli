@@ -488,8 +488,12 @@ describe("driving the claude CLI", () => {
     const second = session.send("second");
 
     // Told to the comment that steered it, since nothing else says it landed.
-    match(await session.waitFor(second, "already working"), /at its next step/);
-    match(await session.waitFor(second, "stub answered"), /steered: second/);
+    const notice = await session.waitFor(second, "already working");
+    match(notice, /at its next step/);
+
+    // The answer belongs to the comment that started the turn, not the one that
+    // steered it: on GitHub those are two different review threads.
+    match(await session.waitFor(first, "stub answered"), /steered: second/);
     await session.end();
 
     // One turn, not two: the second mention joined the first rather than following it.
@@ -504,12 +508,11 @@ describe("driving the claude CLI", () => {
     match(landed, /while you were still working/);
     match(landed, /@suchipi said, via github issue_comment \(https:\S+\):\nsecond$/m);
 
-    // The answer went to the comment that steered it, not the one that started the turn.
-    ok(
-      !existsSync(first) ||
-        !readFileSync(first, "utf8").includes("stub answered"),
-      "the turn answered under the first mention",
-    );
+    // Read once the session is over, when nothing further can be written: the
+    // steering comment got the notice and never the answer.
+    const steererReply = readFileSync(second, "utf8");
+    doesNotMatch(steererReply, /stub answered/);
+    match(steererReply, /already working/);
   });
 
   it("queues a mention that changes the model rather than steering with it", async () => {

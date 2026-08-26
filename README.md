@@ -270,9 +270,9 @@ A comment written while the agent is working does not wait for it to finish. It 
 
 The comment that steered it gets a line back, because nothing else would show that it landed:
 
-> The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers as part of the same turn.
+> The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: https://github.com/acme/widgets/pull/7#discussion_r100
 
-From there the turn's output is posted under that comment rather than under the one that started it, the same way [answering a question](#how-to-answer) moves it.
+That line is all the steering comment gets. The turn goes on answering under the comment that started it, so a mention steered in from somewhere else does not drag the answer out of the thread that asked for it — which on GitHub would be a different review thread. Answering [a question the agent asked](#how-to-answer) is the one thing that does move a turn's output, because there the agent is waiting on that reply.
 
 |                                                               |                                                                                                                       |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -285,7 +285,7 @@ From there the turn's output is posted under that comment rather than under the 
 
 **A steer is not guaranteed to land before a `[stop]`.** Nothing comes back from Claude Code to say a mid-turn message was taken, so a `[stop]` written moments after one may cancel it along with the turn, without saying which. Stopping sooner matters more than keeping the steer, so that is the trade this makes: if it mattered, say it again once the turn has stopped.
 
-**One turn is one answer.** Two comments folded into the same turn get one reply between them, posted under the later one, rather than a reply each.
+**One turn is one answer.** Two comments folded into the same turn get one reply between them, posted under the comment that started the turn, rather than a reply each. The others get the notice above, pointing at it.
 
 ## Stopping a turn
 

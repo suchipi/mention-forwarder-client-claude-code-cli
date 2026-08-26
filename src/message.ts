@@ -254,10 +254,11 @@ export function nobodyToAsk(): string {
 /**
  * Posted to the comment that reached a turn already running. Nothing comes back
  * from the CLI to say a mid-turn message landed, so without this the thread sees
- * nothing at all until the turn ends.
+ * nothing at all until the turn ends. The turn answers where it started, so this
+ * is also the only pointer this comment gets to its own answer.
  */
-export function steeredNotice(): string {
-  return "The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers as part of the same turn.";
+export function steeredNotice(owner: Mention): string {
+  return `The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: ${owner.url}`;
 }
 
 /** Posted once a turn somebody called off has actually stopped. */

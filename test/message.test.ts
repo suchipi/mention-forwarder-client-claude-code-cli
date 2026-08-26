@@ -290,8 +290,12 @@ describe("what the thread sees", () => {
   });
 
   it("tells the thread a mid-turn mention reached the running turn", () => {
-    match(say.steeredNotice(), /already working/);
-    match(say.steeredNotice(), /at its next step/);
+    match(say.steeredNotice(mention), /already working/);
+    match(say.steeredNotice(mention), /at its next step/);
+  });
+
+  it("points a steered comment at the thread the answer will appear in", () => {
+    ok(say.steeredNotice(mention).includes(mention.url));
   });
 
   it("says a stopped turn was stopped, not that it failed", () => {
