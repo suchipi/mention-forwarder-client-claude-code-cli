@@ -92,14 +92,28 @@ describe("what the agent is told", () => {
   });
 
   it("gives the operator the last word in the system prompt", () => {
-    const prompt = say.systemPrompt("ask", "  Work on a branch of your own.  ");
+    const prompt = say.systemPrompt("ask", undefined, "  Work on a branch of your own.  ");
     match(prompt, /waits there until somebody answers/);
     ok(prompt.endsWith("\n\nWork on a branch of your own."), prompt);
   });
 
   it("adds nothing when the operator said nothing", () => {
-    strictEqual(say.systemPrompt("ask", "   "), say.systemPrompt("ask"));
-    strictEqual(say.systemPrompt("ask", undefined), say.systemPrompt("ask"));
+    strictEqual(say.systemPrompt("ask", undefined, "   "), say.systemPrompt("ask"));
+    strictEqual(say.systemPrompt("ask", undefined, undefined), say.systemPrompt("ask"));
+  });
+
+  it("puts the thread's link in the system prompt, with what to do about it", () => {
+    const prompt = say.systemPrompt("ask", mention);
+    match(prompt, /on github, at https:\/\/github\.com\/acme\/widgets\/issues\/7#issuecomment-100\./);
+    match(prompt, /read the rest of it for context before you answer/);
+  });
+
+  it("leaves the platform out when the mention did not name one", () => {
+    match(say.systemPrompt("ask", { ...mention, platform: "" }), /answering in is at https:\/\/github\.com/);
+  });
+
+  it("says nothing about the thread when the mention carried no link to it", () => {
+    strictEqual(say.systemPrompt("ask", { ...mention, url: "" }), say.systemPrompt("ask"));
   });
 });
 

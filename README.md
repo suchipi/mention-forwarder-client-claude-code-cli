@@ -123,7 +123,9 @@ https://github.com/acme/widgets/issues/7#issuecomment-101
 also update the changelog
 ```
 
-A few lines are also appended to the session's system prompt, because Claude Code otherwise has every reason to believe it is talking to somebody at a terminal: that its replies are posted as comments, that nobody is at a keyboard, and how long an answer takes to come back. What it says depends on `--approval`.
+A few lines are also appended to the session's system prompt, because Claude Code otherwise has every reason to believe it is talking to somebody at a terminal: that its replies are posted as comments, that nobody is at a keyboard, where the thread is, and how long an answer takes to come back. What it says depends on `--approval`.
+
+The thread's link is the mention's own permalink, from whichever mention started the process, and it comes with a note that only the mentions themselves reach the agent, so the rest of the thread is worth reading. A mention that arrives without a permalink leaves the line out.
 
 ### Telling it something of your own
 

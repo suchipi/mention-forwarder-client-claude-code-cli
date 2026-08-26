@@ -402,7 +402,7 @@ export function createConversation({
     drain();
   }
 
-  async function ensureRunning(): Promise<boolean> {
+  async function ensureRunning(mention: Mention): Promise<boolean> {
     if (claude?.running === true) return true;
 
     const resume = resumeFailed ? undefined : sessionId;
@@ -418,6 +418,7 @@ export function createConversation({
       addDirs: options.addDirs,
       appendSystemPrompt: say.systemPrompt(
         options.approval,
+        mention,
         options.appendSystemPrompt,
       ),
       extraArgs: options.extraArgs,
@@ -442,7 +443,7 @@ export function createConversation({
         resumeFailed = true;
         sessionId = undefined;
         if (conversationKey !== undefined) store.forget(conversationKey);
-        return ensureRunning();
+        return ensureRunning(mention);
       }
       return false;
     }
@@ -554,7 +555,7 @@ export function createConversation({
   }
 
   async function run(mention: Mention, body: string): Promise<void> {
-    if (!(await ensureRunning())) {
+    if (!(await ensureRunning(mention))) {
       // An exit during startup is reported by onExit only once a turn is open,
       // which it is not yet, so this is the one place that says so.
       reportTo(

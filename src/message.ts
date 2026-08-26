@@ -6,15 +6,27 @@ import type { Denial, Signal } from "./signals.ts";
 /** Long tool arguments are summarized rather than dumped into a public comment. */
 const MAX_ARGUMENT_CHARS = 300;
 
+/** Nothing is said when the mention carried no permalink: pointing at a thread needs an address. */
+function threadContext(mention: Mention): string[] {
+  if (mention.url === "") return [];
+  const where = mention.platform === "" ? `at ${mention.url}` : `on ${mention.platform}, at ${mention.url}`;
+  return [
+    `The thread you are answering in is ${where}. Only the mentions themselves reach you, so read the rest of it for context before you answer, with whatever tool can reach that platform.`,
+  ];
+}
+
 /**
  * Appended to the session's system prompt. Claude Code otherwise has every
  * reason to believe it is talking to someone at a terminal, and the difference
  * decides how it writes and whether it stops to ask.
  *
+ * `mention` is the one the session is being started for; a process serves one
+ * conversation, so its thread is every later mention's thread too.
+ *
  * `extra` is whatever the operator put in `appendSystemPrompt`, added last so
  * their standing instructions read as the final word on how the bot behaves.
  */
-export function systemPrompt(approval: ApprovalMode, extra?: string): string {
+export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: string): string {
   const waiting: Record<ApprovalMode, string> = {
     ask: "When you need permission to run a tool, or ask a question with AskUserQuestion, it is posted to the thread and your turn waits there until somebody answers, which can take hours. Do everything that does not depend on the answer first.",
     allow:
@@ -25,7 +37,8 @@ export function systemPrompt(approval: ApprovalMode, extra?: string): string {
   return [
     "You are running as a bot that answers @-mentions forwarded from GitHub, Slack, and Linear.",
     "Everything you say in reply is posted back to the thread the mention came from, as a comment. Write for the people reading it there, not for a terminal: no ANSI colour, no clearing the screen, no assuming anyone can see your working directory.",
-    "Nobody is at a keyboard. A person sees your reply only once it is posted as a comment, and answers by writing another comment. That comment reaches you as a further turn in this session, or, if you are still working when it arrives, as a new message part-way through the turn you are on.",
+    "Nobody is at a keyboard. A person sees your reply only once it is posted as a comment, and answers by writing another comment, which reaches you as a further turn in this session.",
+    ...(mention === undefined ? [] : threadContext(mention)),
     waiting[approval],
     ...(extra === undefined || extra.trim() === "" ? [] : [extra.trim()]),
   ].join("\n\n");
