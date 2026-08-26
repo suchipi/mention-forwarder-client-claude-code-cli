@@ -1,5 +1,6 @@
 import { doesNotMatch, match, ok, strictEqual } from "node:assert/strict";
 import { describe, it } from "node:test";
+import { parseDirective } from "../src/directive.ts";
 import * as say from "../src/message.ts";
 import type { Mention } from "../src/mention.ts";
 import type { Signal } from "../src/signals.ts";
@@ -41,19 +42,19 @@ describe("what the agent is told", () => {
   it("opens a session with the thread, the author, and the link", () => {
     const opening = say.firstMessage(mention, "please fix the flaky test");
     match(opening, /^\[github:acme\/widgets#7\] Flaky test in CI\n/);
-    match(opening, /from @suchipi via github issue_comment/);
+    match(opening, /@suchipi said, via github issue_comment \(https:\S+\):/);
     match(
       opening,
       /https:\/\/github\.com\/acme\/widgets\/issues\/7#issuecomment-100/,
     );
     match(opening, /posted back to that thread as a comment/);
-    match(opening, /please fix the flaky test$/);
+    match(opening, /@suchipi said, via github issue_comment \(https:\S+\):\nplease fix the flaky test$/);
   });
 
   it("leaves the framing out of every later message", () => {
     const later = say.followUpMessage(mention, "also update the changelog");
     doesNotMatch(later, /posted back to that thread as a comment/);
-    match(later, /also update the changelog$/);
+    match(later, /@suchipi said, via github issue_comment \(https:\S+\):\nalso update the changelog$/);
   });
 
   it("says something when the mention was only the trigger phrase", () => {
@@ -66,11 +67,66 @@ describe("what the agent is told", () => {
   it("tells a steered agent this changes the turn rather than starting one", () => {
     const steer = say.steerMessage(mention, "check the release branch instead");
     // Repeated because whoever steers a turn need not be whoever started it.
-    match(steer, /from @suchipi via github issue_comment/);
+    match(steer, /@suchipi said, via github issue_comment \(https:\S+\):/);
     match(steer, /while you were still working/);
     match(steer, /part of this turn/);
     doesNotMatch(steer, /posted back to that thread as a comment/);
-    match(steer, /check the release branch instead$/);
+    match(steer, /@suchipi said, via github issue_comment \(https:\S+\):\ncheck the release branch instead$/);
+  });
+
+  it("names whoever wrote a message once, on every kind of message", () => {
+    for (const message of [
+      say.firstMessage(mention, "do the thing"),
+      say.followUpMessage(mention, "do the thing"),
+      say.steerMessage(mention, "do the thing"),
+    ]) {
+      match(message, /@suchipi said, via github issue_comment \(https:\S+\):\ndo the thing$/);
+      strictEqual(message.match(/@suchipi/g)?.length, 1, message);
+    }
+  });
+
+  it("calls an author-less mention someone rather than dropping the label", () => {
+    const anonymous = { ...mention, author: "" };
+    match(say.followUpMessage(anonymous, "x"), /^someone said, via github/m);
+    match(say.followUpMessage(anonymous, ""), /\):\n\(the mention had no text/);
+  });
+
+  it("leaves out what the mention did not carry", () => {
+    const bare = { ...mention, platform: "", kind: "", url: "" };
+    strictEqual(say.followUpMessage(bare, "do the thing"), "@suchipi said:\ndo the thing");
+  });
+
+  it("tells the agent the labels are there and what to do with them", () => {
+    match(say.systemPrompt("ask"), /labelled with who wrote it/);
+    match(say.systemPrompt("ask"), /quote the right person/);
+  });
+
+  it("labels the words a group left behind, not the group itself", () => {
+    // Put the label in front instead and `[stop]` stops matching, so the turn it
+    // was meant to call off keeps running.
+    const raw = {
+      ...mention,
+      text: "@my-bot [stop] do this instead",
+      prompt: "[stop] do this instead",
+    };
+    const parsed = parseDirective(say.spokenText(raw));
+    strictEqual(parsed.directive.interrupt, true);
+
+    const later = say.followUpMessage(raw, parsed.rest);
+    match(later, /@suchipi said, via github issue_comment \(https:\S+\):\ndo this instead$/);
+    doesNotMatch(later, /\[stop\]/);
+  });
+
+  it("names whoever answered a question and whoever refused a tool", () => {
+    match(
+      say.answerToQuestion(mention, "  spaces  "),
+      /^@suchipi answered, in the thread: spaces$/m,
+    );
+    match(
+      say.refusalFrom(mention, "no, that file is generated"),
+      /^@suchipi refused it, in the thread: no, that file is generated$/,
+    );
+    match(say.refusalFrom(mention, "   "), /^@suchipi did not approve it\.$/);
   });
 
   it("warns the agent that a comment can reach it part-way through a turn", () => {

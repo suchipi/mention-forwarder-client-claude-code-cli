@@ -210,7 +210,10 @@ export function createConversation({
     if (turn !== undefined) turn.mention = mention;
 
     if (ask.isQuestion) {
-      settle(ask, { behavior: "deny", message: say.answerToQuestion(body) });
+      settle(ask, {
+        behavior: "deny",
+        message: say.answerToQuestion(mention, body),
+      });
       return;
     }
     if (isApproval(body)) {
@@ -219,8 +222,7 @@ export function createConversation({
     }
     settle(ask, {
       behavior: "deny",
-      message:
-        body.trim() === "" ? "The person did not approve it." : body.trim(),
+      message: say.refusalFrom(mention, body),
     });
   }
 

@@ -38,6 +38,7 @@ export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: 
     "You are running as a bot that answers @-mentions forwarded from GitHub, Slack, and Linear.",
     "Everything you say in reply is posted back to the thread the mention came from, as a comment. Write for the people reading it there, not for a terminal: no ANSI colour, no clearing the screen, no assuming anyone can see your working directory.",
     "Nobody is at a keyboard. A person sees your reply only once it is posted as a comment, and answers by writing another comment, which reaches you as a further turn in this session.",
+    "Everything a person says here reaches you labelled with who wrote it. More than one of them can be in the same thread, so read the label before you attribute anything, and quote the right person.",
     ...(mention === undefined ? [] : threadContext(mention)),
     waiting[approval],
     ...(extra === undefined || extra.trim() === "" ? [] : [extra.trim()]),
@@ -51,13 +52,9 @@ export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: 
 const FRAMING =
   "You are answering an @-mention that mention-forwarder picked up. Whatever you say in reply is posted back to that thread as a comment, so write for the people reading it there. Later mentions in the same thread arrive as further turns in this session.";
 
-function attribution(mention: Mention): string {
-  const via = [mention.platform, mention.kind]
-    .filter((part) => part !== "")
-    .join(" ");
-  const who = mention.author === "" ? "someone" : `@${mention.author}`;
-  const line = via === "" ? `from ${who}` : `from ${who} via ${via}`;
-  return mention.url === "" ? line : `${line}\n${mention.url}`;
+/** How a person is named to the agent, `@`-prefixed as their platform writes it. */
+function speaker(mention: Mention): string {
+  return mention.author === "" ? "someone" : `@${mention.author}`;
 }
 
 /** What the person actually wrote: the mention minus the trigger phrase, or the whole body when that leaves nothing. */
@@ -73,29 +70,54 @@ function orPlaceholder(body: string): string {
     : body.trim();
 }
 
+/**
+ * A person's words, under one line saying who wrote them and how it reached the
+ * agent. Every message carries it, because a thread has more than one person in
+ * it and quoting one of them as another is worse than not quoting at all.
+ *
+ * Above the words rather than in front of them, so a body that opens with a code
+ * fence, a heading or a quote still reads as one, and last in its message, so
+ * the label is never separated from what it names. The permalink is
+ * parenthetical because the colon has to be the last thing on the line:
+ * whatever follows it reads as part of what was said.
+ *
+ * `body` is what is left once a `[...]` group has been taken off the front, so a
+ * label never lands in front of one and nothing here can stop `[stop]` parsing.
+ */
+function said(mention: Mention, body: string): string {
+  const via = [mention.platform, mention.kind]
+    .filter((part) => part !== "")
+    .join(" ");
+  const how = [
+    via === "" ? "" : `, via ${via}`,
+    mention.url === "" ? "" : ` (${mention.url})`,
+  ].join("");
+  return `${speaker(mention)} said${how}:\n${orPlaceholder(body)}`;
+}
+
 /** The message that opens a session. Its first line becomes the session's name. */
 export function firstMessage(mention: Mention, body: string): string {
   const heading =
     mention.title === ""
       ? `[${mention.conversationKey}]`
       : `[${mention.conversationKey}] ${mention.title}`;
-  return `${heading}\n${attribution(mention)}\n\n${FRAMING}\n\n${orPlaceholder(body)}`;
+  return `${heading}\n\n${FRAMING}\n\n${said(mention, body)}`;
 }
 
 /** The message for every later mention in a conversation the agent already has context for. */
 export function followUpMessage(mention: Mention, body: string): string {
-  return `${attribution(mention)}\n\n${orPlaceholder(body)}`;
+  return said(mention, body);
 }
 
 /**
  * The message for a mention that reached a turn already running. It says so,
  * because the agent is part-way through something and would otherwise read this
  * as the next thing to do rather than a change to what it is already doing. It
- * may also be from somebody other than whoever started the turn, which is why
- * the attribution is repeated here as it is on any other mention.
+ * may also be from somebody other than whoever started the turn, which is why it
+ * is labelled here as on any other mention.
  */
 export function steerMessage(mention: Mention, body: string): string {
-  return `${attribution(mention)}\n\nThis arrived while you were still working, so it changes the turn you are on rather than starting another one. Take it into account from here, and answer it as part of this turn.\n\n${orPlaceholder(body)}`;
+  return `This arrived while you were still working, so it changes the turn you are on rather than starting another one. Take it into account from here, and answer it as part of this turn.\n\n${said(mention, body)}`;
 }
 
 /** Inline-code safe: a public reply is no place for a raw multi-line blob. */
@@ -213,8 +235,15 @@ export function askNotice(ask: Ask): string {
 }
 
 /** Given to `AskUserQuestion` as the tool's result, since the tool itself has nobody to ask. */
-export function answerToQuestion(reply: string): string {
-  return `The person you asked replied, in the thread: ${reply.trim()}\n\n(There is no interactive user here. Their answer arrived as a comment, which is why it comes back through this channel.)`;
+export function answerToQuestion(mention: Mention, reply: string): string {
+  return `${speaker(mention)} answered, in the thread: ${reply.trim()}\n\n(There is no interactive user here. Their answer arrived as a comment, which is why it comes back through this channel.)`;
+}
+
+/** Given to a tool the thread turned down, as the reason the agent is shown. */
+export function refusalFrom(mention: Mention, reply: string): string {
+  return reply.trim() === ""
+    ? `${speaker(mention)} did not approve it.`
+    : `${speaker(mention)} refused it, in the thread: ${reply.trim()}`;
 }
 
 /** Given to `AskUserQuestion` when nobody is going to be asked at all. */
