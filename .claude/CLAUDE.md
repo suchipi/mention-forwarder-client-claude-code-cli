@@ -10,13 +10,13 @@ A [mention-forwarder](https://github.com/suchipi/mention-forwarder) client. It r
 
 ## Commands
 
-| | |
-| --- | --- |
-| `npm test` | Unit tests plus `test/e2e.test.ts`, which runs the real CLI against `test/stub-claude.mjs`. |
-| `node --test test/patterns.test.ts` | One test file. |
-| `node --test --test-name-pattern "posts a question" test/e2e.test.ts` | One test. |
-| `npm run typecheck` | `tsc --noEmit`. There is nothing else to build. |
-| `./run.sh` (see README) | The whole loop locally: forwarder, simulator, this client, `claude`. |
+|                                                                       |                                                                                             |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `npm test`                                                            | Unit tests plus `test/e2e.test.ts`, which runs the real CLI against `test/stub-claude.mjs`. |
+| `node --test test/patterns.test.ts`                                   | One test file.                                                                              |
+| `node --test --test-name-pattern "posts a question" test/e2e.test.ts` | One test.                                                                                   |
+| `npm run typecheck`                                                   | `tsc --noEmit`. There is nothing else to build.                                             |
+| `./run.sh` (see README)                                               | The whole loop locally: forwarder, simulator, this client, `claude`.                        |
 
 ## No build step
 
@@ -35,7 +35,7 @@ stdin ──▶ mention.ts ──▶ cli.ts (serialized queue) ──▶ convers
                                     reply.ts (reply file) ◀───┘
 ```
 
-`conversation.ts` is the whole state machine and the only module that decides anything. It holds at most one running `turn`, at most one `parked` ask, and a `waiting` queue of mentions behind them. Each arriving mention takes exactly one of five paths, in this order: an exit group ends the `claude` process, turn and all; otherwise an interrupt group stops the running turn; otherwise a parked ask makes the mention that ask's answer; otherwise a running turn queues it; otherwise it starts a turn.
+`conversation.ts` is the whole state machine and the only module that decides anything. It holds at most one running `turn`, at most one `parked` ask, and a `waiting` queue of mentions behind them. Each arriving mention takes exactly one of five paths, in this order: an exit group ends the `claude` process, turn and all; otherwise an interrupt group stops the running turn; otherwise a parked ask makes the mention that ask's answer; otherwise a running turn takes it as a message part-way through itself, unless it carries a group needing a restart, which queues it; otherwise it starts a turn.
 
 ## Invariants
 
@@ -50,6 +50,8 @@ These are load-bearing across several files and are easy to break with a local-l
 **A remembered session is only reused for the same `cwd`.** Claude Code files sessions under the directory it ran in, so an entry recorded under another directory is ignored. A resume that fails is retried once without the id rather than failing the thread.
 
 **Only one ask can be parked at a time**, because only the next comment can answer it, and answering moves the turn's output onto the answering mention's reply file.
+
+**A mention that reaches a running turn is written straight into it, and nothing acknowledges that.** Claude Code takes a user message written part-way through a turn and folds it in at its next step, which is the whole mechanism: `steer()` is one `claude.send()`. No event comes back to say it landed, which is why the notice to the thread is posted on the way out rather than when the agent acts on it, and why `interrupt()`'s `cancel_queued: true` can discard one that had not landed yet — stopping promptly is the deliberate trade. As with answering a parked ask, a steer moves the turn's output onto the steering mention's reply file, so one turn can answer several mentions with a single reply.
 
 ## Changing things
 

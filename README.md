@@ -11,14 +11,15 @@ Linear  ──┘           ▲                                      ◀──�
                       └─────────────── reply file ───────────┘
 ```
 
-One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model and reasoning effort, by opening a mention with `[model=opus, effort=max]`, and a turn already running can be called off with `[stop]`.
+One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model and reasoning effort, by opening a mention with `[model=opus, effort=max]`, a comment written while the agent is working reaches the turn it is working on, and a turn already running can be called off with `[stop]`.
 
-| mention-forwarder | this program | Claude Code |
-| --- | --- | --- |
-| A conversation (`conversationKey`) | one process, one remembered session id | a session, resumable by id |
-| A mention | one message | a turn |
-| The reply file | what the agent said, appended as it arrives | `text` blocks from the main agent |
-| A comment answering the bot | an answer to what it was waiting on | a `can_use_tool` decision |
+| mention-forwarder                  | this program                                | Claude Code                            |
+| ---------------------------------- | ------------------------------------------- | -------------------------------------- |
+| A conversation (`conversationKey`) | one process, one remembered session id      | a session, resumable by id             |
+| A mention                          | one message                                 | a turn                                 |
+| The reply file                     | what the agent said, appended as it arrives | `text` blocks from the main agent      |
+| A comment answering the bot        | an answer to what it was waiting on         | a `can_use_tool` decision              |
+| A comment while it is working      | a message into the turn already running     | a user message part-way through a turn |
 
 ## Requirements
 
@@ -46,7 +47,10 @@ Then point mention-forwarder at it, in its `mention-forwarder.config.json`:
 
 ```json
 {
-  "command": ["node", "/absolute/path/to/mention-forwarder-client-claude-code-cli/src/cli.ts"],
+  "command": [
+    "node",
+    "/absolute/path/to/mention-forwarder-client-claude-code-cli/src/cli.ts"
+  ],
   "cwd": "/absolute/path/to/the/checkout/the/agent/should/work/in",
   "lifecycle": "per-conversation",
   "timeoutMs": 0,
@@ -59,13 +63,13 @@ Then point mention-forwarder at it, in its `mention-forwarder.config.json`:
 
 The five settings that matter, and why:
 
-| Setting | Why |
-| --- | --- |
+| Setting                           | Why                                                                                                                                                                                                                                                |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `"lifecycle": "per-conversation"` | What this is built for. `per-mention` works too, because the remembered session ids still point every mention at the same session, but a thread cannot answer anything there: what the agent is waiting for is only known while the process lives. |
-| `"cwd"` | Claude Code works in the directory it is started in, and files its session under that directory. This is the checkout the agent reads and edits. |
-| `"timeoutMs": 0` | A turn can take many minutes, and this is a cap on the whole process, not on one mention. |
-| `"sessionIdleMs"` | How long a quiet thread keeps a process alive. Closing one costs nothing: the session id is remembered, so the next mention resumes the same session. |
-| `"ignoreBots": true` | Keeps the agent from answering its own replies forever. |
+| `"cwd"`                           | Claude Code works in the directory it is started in, and files its session under that directory. This is the checkout the agent reads and edits.                                                                                                   |
+| `"timeoutMs": 0`                  | A turn can take many minutes, and this is a cap on the whole process, not on one mention.                                                                                                                                                          |
+| `"sessionIdleMs"`                 | How long a quiet thread keeps a process alive. Closing one costs nothing: the session id is remembered, so the next mention resumes the same session.                                                                                              |
+| `"ignoreBots": true`              | Keeps the agent from answering its own replies forever.                                                                                                                                                                                            |
 
 A copy of that config is in [mention-forwarder.config.example.json](./mention-forwarder.config.example.json). Settings for this program itself go in a file of its own, [described below](#settings).
 
@@ -87,14 +91,14 @@ Anything on `run.sh`'s own command line is passed to this client, which is how y
 ./run.sh --no-state --log-level debug
 ```
 
-| Environment | |
-| --- | --- |
-| `MENTION_FORWARDER_DIR` | Where mention-forwarder is checked out. Default `../mention-forwarder`. |
-| `CONFIG_DIR` | Where the generated config lives. Default `./.run`. |
-| `AGENT_CWD` | The checkout the agent works in. Default `$CONFIG_DIR/workspace`, which starts empty; point it at something real once you trust the bot with it. |
-| `TRIGGER` | The phrase that counts as a mention. Default `@my-bot`. Read when the config is first written. |
-| `SIM_PLATFORM` | `github`, `slack`, or `linear`. One simulator imitates one platform. |
-| `SIM_PORT` | The simulator's port. Default `4000`. |
+| Environment             |                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MENTION_FORWARDER_DIR` | Where mention-forwarder is checked out. Default `../mention-forwarder`.                                                                          |
+| `CONFIG_DIR`            | Where the generated config lives. Default `./.run`.                                                                                              |
+| `AGENT_CWD`             | The checkout the agent works in. Default `$CONFIG_DIR/workspace`, which starts empty; point it at something real once you trust the bot with it. |
+| `TRIGGER`               | The phrase that counts as a mention. Default `@my-bot`. Read when the config is first written.                                                   |
+| `SIM_PLATFORM`          | `github`, `slack`, or `linear`. One simulator imitates one platform.                                                                             |
+| `SIM_PORT`              | The simulator's port. Default `4000`.                                                                                                            |
 
 ## What the agent is told
 
@@ -145,11 +149,11 @@ A turn that says nothing posts nothing, which a tool-only turn can do. Run with 
 
 Permission prompts are routed to this program rather than refused by the CLI, which is what `--permission-prompt-tool stdio` does. What happens next is `--approval`:
 
-| Mode | A tool that needs permission | A question the agent asks with `AskUserQuestion` |
-| --- | --- | --- |
-| `ask` (default) | Posted to the thread; the turn waits for somebody to answer. | Posted to the thread with its options; the turn waits. |
-| `allow` | Approved, unattended. | Posted to the thread with its options; the turn waits. A question is the one thing `allow` does not approve, since approving it would not produce an answer. |
-| `deny` | Refused, unattended. What it wanted to run is listed in the thread when the turn ends. | Refused, with a note telling the agent to put the question in its reply instead. |
+| Mode            | A tool that needs permission                                                           | A question the agent asks with `AskUserQuestion`                                                                                                             |
+| --------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ask` (default) | Posted to the thread; the turn waits for somebody to answer.                           | Posted to the thread with its options; the turn waits.                                                                                                       |
+| `allow`         | Approved, unattended.                                                                  | Posted to the thread with its options; the turn waits. A question is the one thing `allow` does not approve, since approving it would not produce an answer. |
+| `deny`          | Refused, unattended. What it wanted to run is listed in the thread when the turn ends. | Refused, with a note telling the agent to put the question in its reply instead.                                                                             |
 
 ### What lands in the thread
 
@@ -182,11 +186,11 @@ A question:
 
 **The reply has to be a mention like any other.** mention-forwarder only forwards a comment that triggers it, so an answer that does not is never delivered and the turn goes on waiting:
 
-| Where | Write |
-| --- | --- |
-| GitHub, Linear | `@my-bot approve` (whatever you set as a trigger phrase) |
-| A Slack channel or thread | `@my-bot approve` |
-| A Slack DM | `approve`, since a DM needs no mention |
+| Where                     | Write                                                    |
+| ------------------------- | -------------------------------------------------------- |
+| GitHub, Linear            | `@my-bot approve` (whatever you set as a trigger phrase) |
+| A Slack channel or thread | `@my-bot approve`                                        |
+| A Slack DM                | `approve`, since a DM needs no mention                   |
 
 **The next mention in that conversation is the answer.** It is not run as a new turn, and whatever the agent goes on to say is posted under that comment rather than under the one that started the turn.
 
@@ -202,12 +206,12 @@ yep       yeah       👍
 
 Case does not matter and a trailing `.`, `!`, `,`, `;`, or `:` is ignored, so `Approve.` and `LGTM` both count. **It is the entire message that is matched, not a phrase inside it**, which is what stops a refusal from being read as approval. So these are all refusals, and each one is handed to the agent as the reason it may not run the tool:
 
-| Reply | Read as |
-| --- | --- |
-| `@my-bot approve` | yes |
-| `@my-bot no, that file is generated` | no, and the agent is told why |
-| `@my-bot please do it after the release` | no, even though it contains "do it" |
-| `@my-bot approve the other one` | no, even though it starts with "approve" |
+| Reply                                    | Read as                                  |
+| ---------------------------------------- | ---------------------------------------- |
+| `@my-bot approve`                        | yes                                      |
+| `@my-bot no, that file is generated`     | no, and the agent is told why            |
+| `@my-bot please do it after the release` | no, even though it contains "do it"      |
+| `@my-bot approve the other one`          | no, even though it starts with "approve" |
 
 If you meant yes, say only yes. Anything you want the agent to know goes in the mention after it has carried on.
 
@@ -229,28 +233,55 @@ Whoever writes the mention picks the model and the reasoning effort, with a brac
 
 The group is read, applied to the thread, and removed; the agent is given only what follows it. Nothing has to be configured for this to work, and it needs no access to the machine the bot runs on.
 
-| | |
-| --- | --- |
-| Where it goes | First thing after the trigger phrase, and nothing before it. `look at this [model=opus]` is ordinary text. |
-| `model` | Anything `claude --model` takes: an alias like `opus`, `sonnet`, `haiku`, or `fable`, or a full name like `claude-opus-5`. |
-| `effort` | `low`, `medium`, `high`, `xhigh`, or `max`. |
-| Shape | Comma-separated `name=value` pairs. Either setting may appear alone, in either order. Setting names and effort levels are not case sensitive; a model name is passed through as written. |
-| How long it lasts | Every later mention in that thread runs on it too, until another group changes it. It is remembered alongside the session id, so it survives the process going away. |
+|                   |                                                                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Where it goes     | First thing after the trigger phrase, and nothing before it. `look at this [model=opus]` is ordinary text.                                                                               |
+| `model`           | Anything `claude --model` takes: an alias like `opus`, `sonnet`, `haiku`, or `fable`, or a full name like `claude-opus-5`.                                                               |
+| `effort`          | `low`, `medium`, `high`, `xhigh`, or `max`.                                                                                                                                              |
+| Shape             | Comma-separated `name=value` pairs. Either setting may appear alone, in either order. Setting names and effort levels are not case sensitive; a model name is passed through as written. |
+| How long it lasts | Every later mention in that thread runs on it too, until another group changes it. It is remembered alongside the session id, so it survives the process going away.                     |
 
 Some examples:
 
-| Written in the thread | What happens |
-| --- | --- |
-| `@my-bot [model=sonnet] have a look` | The thread moves to Sonnet and the agent is asked to have a look. |
-| `@my-bot [effort=max]` | Nothing but the group, so this is an instruction to the bot alone: the thread moves to maximum effort and it answers with a line saying so, without running the agent. |
-| `@my-bot [EFFORT=High, Model=opus] go` | The same as `[effort=high, model=opus] go`. |
-| `@my-bot [WIP] have a look` | Ordinary text. `WIP` is not `name=value`, so the whole group is left alone and reaches the agent as written. |
-| `@my-bot [effort=turbo] go` | `turbo` is not an effort level, so the bot says so in the thread and does not run the mention. |
-| `@my-bot [model=nonesuch] go` | Passed to `claude`, which cannot use it. What `claude` says about it is posted to the thread. |
+| Written in the thread                  | What happens                                                                                                                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@my-bot [model=sonnet] have a look`   | The thread moves to Sonnet and the agent is asked to have a look.                                                                                                      |
+| `@my-bot [effort=max]`                 | Nothing but the group, so this is an instruction to the bot alone: the thread moves to maximum effort and it answers with a line saying so, without running the agent. |
+| `@my-bot [EFFORT=High, Model=opus] go` | The same as `[effort=high, model=opus] go`.                                                                                                                            |
+| `@my-bot [WIP] have a look`            | Ordinary text. `WIP` is not `name=value`, so the whole group is left alone and reaches the agent as written.                                                           |
+| `@my-bot [effort=turbo] go`            | `turbo` is not an effort level, so the bot says so in the thread and does not run the mention.                                                                         |
+| `@my-bot [model=nonesuch] go`          | Passed to `claude`, which cannot use it. What `claude` says about it is posted to the thread.                                                                          |
 
-Both are start-up flags, so changing one restarts the `claude` process on the same session id. The thread keeps its history.
+Both are start-up flags, so changing one restarts the `claude` process on the same session id. The thread keeps its history. It is also why a group carrying one cannot join a turn already running: a mention that changes the model waits for a turn of its own, where a mention without a group would have been [steered into the running turn](#steering-a-running-turn) instead.
 
 One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn) and [`[exit]`](#ending-the-process), which are read wherever they appear.
+
+## Steering a running turn
+
+A comment written while the agent is working does not wait for it to finish. It goes to the turn already running, which takes it at its next step — after the tool call or the reply it was part-way through — and answers it as part of that same turn. This is what Claude Code does with a message typed at its prompt mid-turn, and it is what happens here by default. Nothing has to be configured and there is nothing to write:
+
+```
+@my-bot actually, check the release branch too
+```
+
+The comment that steered it gets a line back, because nothing else would show that it landed:
+
+> The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers as part of the same turn.
+
+From there the turn's output is posted under that comment rather than under the one that started it, the same way [answering a question](#how-to-answer) moves it.
+
+|                                                               |                                                                                                                       |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Several comments while it works                               | Each reaches the turn, in the order they arrived.                                                                     |
+| A comment from somebody else                                  | Steers it just the same, and the agent is told who wrote it.                                                          |
+| While a turn is waiting on a permission request or a question | That comment is [the answer](#how-to-answer) instead. A waiting turn needs answering, and one comment cannot be both. |
+| With `[model=...]` or `[effort=...]`                          | Waits and runs as a turn of its own, because both are start-up flags and take a restart.                              |
+| With `[stop]` or `[exit]`                                     | Stops the turn or ends the process, as it does anywhere else.                                                         |
+| While the process is starting again after a settings change   | Waits and runs as its own turn, rather than being written to a process that cannot take it.                           |
+
+**A steer is not guaranteed to land before a `[stop]`.** Nothing comes back from Claude Code to say a mid-turn message was taken, so a `[stop]` written moments after one may cancel it along with the turn, without saying which. Stopping sooner matters more than keeping the steer, so that is the trade this makes: if it mattered, say it again once the turn has stopped.
+
+**One turn is one answer.** Two comments folded into the same turn get one reply between them, posted under the later one, rather than a reply each.
 
 ## Stopping a turn
 
@@ -267,13 +298,14 @@ interrupt   stop   int
 
 The `claude` process is interrupted where it stands. It is not killed and the session is not lost: the thread keeps its history and the next mention carries on from there. To end the process itself, see [Ending the process](#ending-the-process).
 
-| | |
-| --- | --- |
-| While a turn is running | It is stopped. Whatever the agent had already said is posted, followed by `Stopped, as asked.` |
-| While a turn is waiting on a permission request or a question | It is stopped too. The tool does not run. This is the one group that is read while something is waiting, rather than being taken as the answer. |
-| While nothing is running | Nothing to do, and the bot says so. A turn that finished a moment before the comment arrived reads this way. |
-| With an instruction after it | The instruction runs as the next turn, once the stopped one has finished stopping. Anything already queued behind it still runs first, in the order it arrived. |
-| With settings after it | `[interrupt, model=opus] try again` stops the turn and applies the settings to the one that replaces it. |
+|                                                                                  |                                                                                                                                                                              |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| While a turn is running                                                          | It is stopped. Whatever the agent had already said is posted, followed by `Stopped, as asked.`                                                                               |
+| While a turn is waiting on a permission request or a question                    | It is stopped too. The tool does not run. This is the one group that is read while something is waiting, rather than being taken as the answer.                              |
+| While nothing is running                                                         | Nothing to do, and the bot says so. A turn that finished a moment before the comment arrived reads this way.                                                                 |
+| With an instruction after it                                                     | The instruction runs as the next turn, once the stopped one has finished stopping. Anything already waiting for a turn of its own still runs first, in the order it arrived. |
+| With settings after it                                                           | `[interrupt, model=opus] try again` stops the turn and applies the settings to the one that replaces it.                                                                     |
+| With something [steered](#steering-a-running-turn) into the turn moments earlier | That may go with the turn, unacknowledged, since nothing says whether it had landed yet. Stopping sooner is the trade this makes.                                            |
 
 ## Ending the process
 
@@ -290,13 +322,13 @@ exit   quit
 
 The process is stopped where it stands, and whatever it was doing goes with it. The session is not lost: the next mention in the thread starts a process again on the same session, so it still has everything said before. Reach for this when the process is wedged, when it is holding onto something you would rather it forgot, or when it was started from a `claude` you have upgraded since. Reach for [`[stop]`](#stopping-a-turn) when it is only the turn you want rid of.
 
-| | |
-| --- | --- |
-| While a turn is running | It goes with the process. Whatever the agent had already said stays posted, and the end is not reported as a failure. |
-| While a turn is waiting on a permission request or a question | It goes too, and the tool does not run. Like `[stop]`, this is read while something is waiting rather than being taken as the answer. |
-| While the process is not running | Nothing to do, and the bot says so. A thread whose session mention-forwarder has already closed for being idle reads this way. |
-| With an instruction after it | The instruction runs as the next turn, in the process that replaces this one. Anything already queued still runs first, in the order it arrived. |
-| With settings after it | `[exit, model=opus] try again` ends the process and applies the settings to the one that replaces it. |
+|                                                               |                                                                                                                                                                         |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| While a turn is running                                       | It goes with the process. Whatever the agent had already said stays posted, and the end is not reported as a failure.                                                   |
+| While a turn is waiting on a permission request or a question | It goes too, and the tool does not run. Like `[stop]`, this is read while something is waiting rather than being taken as the answer.                                   |
+| While the process is not running                              | Nothing to do, and the bot says so. A thread whose session mention-forwarder has already closed for being idle reads this way.                                          |
+| With an instruction after it                                  | The instruction runs as the next turn, in the process that replaces this one. Anything already waiting for a turn of its own still runs first, in the order it arrived. |
+| With settings after it                                        | `[exit, model=opus] try again` ends the process and applies the settings to the one that replaces it.                                                                   |
 
 ## Settings
 
@@ -313,25 +345,25 @@ Anything you would otherwise pass as a flag can live in `mention-forwarder-claud
 }
 ```
 
-| Setting | Same as |
-| --- | --- |
-| `binary` | `--binary` |
-| `cwd` | `--cwd`, a path taken relative to the config file |
-| `model` | `--model` |
-| `effort` | `--effort` |
-| `permissionMode` | `--permission-mode` |
-| `approval` | `--approval` |
-| `appendSystemPrompt` | `--append-system-prompt` |
-| `allowedTools` | `--allowed-tools` |
-| `disallowedTools` | `--disallowed-tools` |
-| `addDirs` | `--add-dir`, a list of paths taken relative to the config file |
-| `claudeArgs` | `--claude-arg`, a list |
-| `progress` | `--progress` |
-| `askTimeoutSeconds` | `--ask-timeout` |
-| `stateFile` | `--state-file`, a path taken relative to the config file |
-| `patternsFile` | `--patterns`, as above |
-| `recordFile` | `--record`, as above |
-| `logLevel` | `--log-level` |
+| Setting              | Same as                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| `binary`             | `--binary`                                                     |
+| `cwd`                | `--cwd`, a path taken relative to the config file              |
+| `model`              | `--model`                                                      |
+| `effort`             | `--effort`                                                     |
+| `permissionMode`     | `--permission-mode`                                            |
+| `approval`           | `--approval`                                                   |
+| `appendSystemPrompt` | `--append-system-prompt`                                       |
+| `allowedTools`       | `--allowed-tools`                                              |
+| `disallowedTools`    | `--disallowed-tools`                                           |
+| `addDirs`            | `--add-dir`, a list of paths taken relative to the config file |
+| `claudeArgs`         | `--claude-arg`, a list                                         |
+| `progress`           | `--progress`                                                   |
+| `askTimeoutSeconds`  | `--ask-timeout`                                                |
+| `stateFile`          | `--state-file`, a path taken relative to the config file       |
+| `patternsFile`       | `--patterns`, as above                                         |
+| `recordFile`         | `--record`, as above                                           |
+| `logLevel`           | `--log-level`                                                  |
 
 **A flag wins over the file, which wins over the built-in default.** A misspelled setting is refused at startup rather than ignored, and so is one of the wrong type.
 
@@ -357,28 +389,28 @@ Entries are only reused for the same working directory, because Claude Code file
 
 ## Options
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `-c`, `--config <path>` | `mention-forwarder-claude-code.config.json` when it exists | The [settings file](#settings). |
-| `--binary <path>` | `claude` | The program to run. Use an absolute path if mention-forwarder's `PATH` is not your shell's. |
-| `--cwd <path>` | this process's own | Directory to run `claude` in. mention-forwarder's `cwd` already sets this, so it is only needed to point somewhere else. |
-| `--model <name>` | the CLI's own default | Model new threads start on. |
-| `--effort <level>` | the CLI's own default | `low`, `medium`, `high`, `xhigh`, or `max`. |
-| `--permission-mode <mode>` | the CLI's own default | Passed to `claude`: `default`, `acceptEdits`, `plan`, `dontAsk`, `auto`, or `bypassPermissions`. |
-| `--approval <mode>` | `ask` | What to do when the agent asks. See [Approvals and questions](#approvals-and-questions). |
-| `--append-system-prompt <text>` | | Instructions added to the end of the system prompt every thread starts with. See [Telling it something of your own](#telling-it-something-of-your-own). |
-| `--allowed-tools <list>` | | Passed to `claude`, e.g. `"Read Grep Bash(git *)"`. |
-| `--disallowed-tools <list>` | | Passed to `claude`. |
-| `--add-dir <path>` | | Another directory the agent may touch. Repeatable. |
-| `--claude-arg <arg>` | | Passed to `claude` untouched, after everything this program sets. Repeatable. Use `--claude-arg=--flag` when the argument starts with a dash. |
-| `--progress <mode>` | `all` | `all` posts what the agent says as it says it; `final` posts only its answer. |
-| `--ask-timeout <seconds>` | `0` | Refuse a waiting request if nobody answers in this long. `0` waits forever. |
-| `--state-file <path>` | `~/.local/state/mention-forwarder-claude-code/sessions.json` | Where conversation-to-session ids are remembered. |
-| `--no-state` | off | Remember nothing. |
-| `--patterns <path>` | | A module that patches how `claude`'s output is read. See below. |
-| `--record <path>` | | Append every raw event from `claude` here. |
-| `--log-level <level>` | `info` | `debug`, `info`, `warn`, or `error`. `debug` adds thinking, tool results, and every event no pattern claimed. |
-| `-h`, `--help` | | Show the options. |
+| Option                          | Default                                                      | Meaning                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-c`, `--config <path>`         | `mention-forwarder-claude-code.config.json` when it exists   | The [settings file](#settings).                                                                                                                         |
+| `--binary <path>`               | `claude`                                                     | The program to run. Use an absolute path if mention-forwarder's `PATH` is not your shell's.                                                             |
+| `--cwd <path>`                  | this process's own                                           | Directory to run `claude` in. mention-forwarder's `cwd` already sets this, so it is only needed to point somewhere else.                                |
+| `--model <name>`                | the CLI's own default                                        | Model new threads start on.                                                                                                                             |
+| `--effort <level>`              | the CLI's own default                                        | `low`, `medium`, `high`, `xhigh`, or `max`.                                                                                                             |
+| `--permission-mode <mode>`      | the CLI's own default                                        | Passed to `claude`: `default`, `acceptEdits`, `plan`, `dontAsk`, `auto`, or `bypassPermissions`.                                                        |
+| `--approval <mode>`             | `ask`                                                        | What to do when the agent asks. See [Approvals and questions](#approvals-and-questions).                                                                |
+| `--append-system-prompt <text>` |                                                              | Instructions added to the end of the system prompt every thread starts with. See [Telling it something of your own](#telling-it-something-of-your-own). |
+| `--allowed-tools <list>`        |                                                              | Passed to `claude`, e.g. `"Read Grep Bash(git *)"`.                                                                                                     |
+| `--disallowed-tools <list>`     |                                                              | Passed to `claude`.                                                                                                                                     |
+| `--add-dir <path>`              |                                                              | Another directory the agent may touch. Repeatable.                                                                                                      |
+| `--claude-arg <arg>`            |                                                              | Passed to `claude` untouched, after everything this program sets. Repeatable. Use `--claude-arg=--flag` when the argument starts with a dash.           |
+| `--progress <mode>`             | `all`                                                        | `all` posts what the agent says as it says it; `final` posts only its answer.                                                                           |
+| `--ask-timeout <seconds>`       | `0`                                                          | Refuse a waiting request if nobody answers in this long. `0` waits forever.                                                                             |
+| `--state-file <path>`           | `~/.local/state/mention-forwarder-claude-code/sessions.json` | Where conversation-to-session ids are remembered.                                                                                                       |
+| `--no-state`                    | off                                                          | Remember nothing.                                                                                                                                       |
+| `--patterns <path>`             |                                                              | A module that patches how `claude`'s output is read. See below.                                                                                         |
+| `--record <path>`               |                                                              | Append every raw event from `claude` here.                                                                                                              |
+| `--log-level <level>`           | `info`                                                       | `debug`, `info`, `warn`, or `error`. `debug` adds thinking, tool results, and every event no pattern claimed.                                           |
+| `-h`, `--help`                  |                                                              | Show the options.                                                                                                                                       |
 
 Mentions arrive on stdin, so nothing has to be passed through `command` or `env` in mention-forwarder. Placeholders such as `{{prompt}}` are fixed at spawn time under `per-conversation` and would go stale after the first mention, which is why this program does not read them.
 
@@ -398,16 +430,16 @@ Those first six arguments are what make the protocol work. `--print` with stream
 
 What travels each way:
 
-| Direction | Frame | Meaning |
-| --- | --- | --- |
-| in | `{"type":"user","message":{"role":"user","content":[{"type":"text","text":…}]}}` | Run this as a turn. |
-| in | `{"type":"control_request","request_id":…,"request":{"subtype":"initialize"}}` | Sent once at startup. Without it the CLI runs in a reduced mode where `AskUserQuestion` is not offered to the model. |
-| in | `{"type":"control_response","response":{"subtype":"success","request_id":…,"response":{"behavior":"allow"\|"deny",…}}}` | The answer to an ask. |
-| out | `{"type":"system","subtype":"init",…}` | Start of a turn; carries the session id. |
-| out | `{"type":"assistant","message":{"content":[…]}}` | One or more finished content blocks: prose, thinking, or a tool call. |
-| out | `{"type":"user","message":{"content":[{"type":"tool_result",…}]}}` | What a tool returned. |
-| out | `{"type":"control_request","request":{"subtype":"can_use_tool",…}}` | The turn has stopped and needs a decision. `requires_user_interaction` marks the ones whose own card is the question, which in practice means `AskUserQuestion`. |
-| out | `{"type":"result","subtype":"success",…}` | The turn is over. Carries the last thing the model said and anything it was not allowed to run. |
+| Direction | Frame                                                                                                                   | Meaning                                                                                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| in        | `{"type":"user","message":{"role":"user","content":[{"type":"text","text":…}]}}`                                        | Run this as a turn.                                                                                                                                              |
+| in        | `{"type":"control_request","request_id":…,"request":{"subtype":"initialize"}}`                                          | Sent once at startup. Without it the CLI runs in a reduced mode where `AskUserQuestion` is not offered to the model.                                             |
+| in        | `{"type":"control_response","response":{"subtype":"success","request_id":…,"response":{"behavior":"allow"\|"deny",…}}}` | The answer to an ask.                                                                                                                                            |
+| out       | `{"type":"system","subtype":"init",…}`                                                                                  | Start of a turn; carries the session id.                                                                                                                         |
+| out       | `{"type":"assistant","message":{"content":[…]}}`                                                                        | One or more finished content blocks: prose, thinking, or a tool call.                                                                                            |
+| out       | `{"type":"user","message":{"content":[{"type":"tool_result",…}]}}`                                                      | What a tool returned.                                                                                                                                            |
+| out       | `{"type":"control_request","request":{"subtype":"can_use_tool",…}}`                                                     | The turn has stopped and needs a decision. `requires_user_interaction` marks the ones whose own card is the question, which in practice means `AskUserQuestion`. |
+| out       | `{"type":"result","subtype":"success",…}`                                                                               | The turn is over. Carries the last thing the model said and anything it was not allowed to run.                                                                  |
 
 Everything on stdout is read as newline-delimited JSON; anything else is logged as a warning rather than parsed. stderr is logged and never posted.
 
@@ -440,22 +472,23 @@ A patterns file needs no build step and no reinstall, so a release that breaks s
 
 ## Troubleshooting
 
-| Symptom | Cause |
-| --- | --- |
-| `Unknown file extension ".ts"` | Node is older than 22.18. Check with `node --version`. |
-| `claude failed to start: spawn claude ENOENT` | `claude` is not on the `PATH` mention-forwarder was started with. Set `--binary` to its absolute path. |
-| `I could not start Claude Code` posted to the thread | The process left before it was ready. Its stderr is in this command's log, prefixed by mention-forwarder. |
-| Nothing is ever posted, but the reaction appears | The turn said nothing, which a tool-only turn can do. Run with `--log-level debug`. |
-| The agent says it lacks permission and nothing was posted asking for it | `--approval` is `deny`, or `--permission-mode` is `dontAsk`. |
-| A permission request is posted but replying does nothing | Replies only answer it while the same process is alive. If mention-forwarder closed the session first (`sessionIdleMs`), the request is gone; the reply is run as a new turn. |
-| Every mention starts a new session | `--no-state` is set, `cwd` changed between runs, or the state file is not writable (that is logged as a warning). |
-| Replies arrive in pieces | Expected: progress is posted as the agent produces it. Raise `replyDebounceMs` in mention-forwarder to gather more of it per comment, or pass `--progress final`. |
-| `no pattern matched an event` in the log | A `claude` release changed a shape. See [Pattern detection](#pattern-detection). |
-| A second mention is answered only after the first finishes | Expected: turns in one session run one at a time, in arrival order. |
-| The turn failed with a model error | The `[model=…]` group named something `claude` cannot use. What `claude` said is posted to the thread. |
-| A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or one of the bare words this program knows, or it was answering a waiting request. See [Choosing the model](#choosing-the-model). |
-| `[stop]` did nothing but post a line saying nothing was running | The turn had already finished by the time mention-forwarder delivered the comment. See [Stopping a turn](#stopping-a-turn). |
-| `[exit]` did nothing but post a line saying nothing was running | There was no `claude` process to end: mention-forwarder had closed the session for being idle, or it had already gone. The next mention starts one. See [Ending the process](#ending-the-process). |
+| Symptom                                                                       | Cause                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Unknown file extension ".ts"`                                                | Node is older than 22.18. Check with `node --version`.                                                                                                                                                                                                   |
+| `claude failed to start: spawn claude ENOENT`                                 | `claude` is not on the `PATH` mention-forwarder was started with. Set `--binary` to its absolute path.                                                                                                                                                   |
+| `I could not start Claude Code` posted to the thread                          | The process left before it was ready. Its stderr is in this command's log, prefixed by mention-forwarder.                                                                                                                                                |
+| Nothing is ever posted, but the reaction appears                              | The turn said nothing, which a tool-only turn can do. Run with `--log-level debug`.                                                                                                                                                                      |
+| The agent says it lacks permission and nothing was posted asking for it       | `--approval` is `deny`, or `--permission-mode` is `dontAsk`.                                                                                                                                                                                             |
+| A permission request is posted but replying does nothing                      | Replies only answer it while the same process is alive. If mention-forwarder closed the session first (`sessionIdleMs`), the request is gone; the reply is run as a new turn.                                                                            |
+| Every mention starts a new session                                            | `--no-state` is set, `cwd` changed between runs, or the state file is not writable (that is logged as a warning).                                                                                                                                        |
+| Replies arrive in pieces                                                      | Expected: progress is posted as the agent produces it. Raise `replyDebounceMs` in mention-forwarder to gather more of it per comment, or pass `--progress final`.                                                                                        |
+| `no pattern matched an event` in the log                                      | A `claude` release changed a shape. See [Pattern detection](#pattern-detection).                                                                                                                                                                         |
+| A second mention is answered only after the first finishes                    | Expected when it carried `[model=…]` or `[effort=…]`, which needs a turn of its own. Otherwise it should have reached the running turn: look for `steering the running turn` in the log. See [Steering a running turn](#steering-a-running-turn).        |
+| A comment written while it was working seems to have been ignored             | If the log says `steering the running turn`, it reached the agent and the agent chose what to do with it; nothing here can force its hand, so say it again as its own mention. If it says `queued behind the running turn`, it needed a turn of its own. |
+| The turn failed with a model error                                            | The `[model=…]` group named something `claude` cannot use. What `claude` said is posted to the thread.                                                                                                                                                   |
+| A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or one of the bare words this program knows, or it was answering a waiting request. See [Choosing the model](#choosing-the-model).                                      |
+| `[stop]` did nothing but post a line saying nothing was running               | The turn had already finished by the time mention-forwarder delivered the comment. See [Stopping a turn](#stopping-a-turn).                                                                                                                              |
+| `[exit]` did nothing but post a line saying nothing was running               | There was no `claude` process to end: mention-forwarder had closed the session for being idle, or it had already gone. The next mention starts one. See [Ending the process](#ending-the-process).                                                       |
 
 ## Development
 
@@ -466,18 +499,18 @@ npm run typecheck
 
 `test/stub-claude.mjs` speaks enough of the protocol to script a run, so the whole pipeline is covered without a model or a network. The event shapes in `test/patterns.test.ts` are copied from real `claude` output.
 
-| Path | Role |
-| --- | --- |
-| `src/cli.ts` | Entry point: options, wiring, the stdin loop, stop signals. |
-| `src/options.ts` | Flags and config file resolved into one checked object. |
-| `src/config-file.ts` | Reading and checking the settings file. |
-| `src/mention.ts` | The mention shape, and reading them off stdin. |
-| `src/claude.ts` | The `claude` process: argv, framing, and the control protocol. |
-| `src/patterns.ts` | What each event means. The one place a shape is read. |
-| `src/signals.ts` | The vocabulary the rest of the program thinks in. |
-| `src/conversation.ts` | One thread: which mention starts a turn, which answers an ask, and what gets posted. |
-| `src/message.ts` | What the agent is told, and what the thread sees. |
-| `src/directive.ts` | The `[model=…, effort=…, interrupt, exit]` group at the start of a mention. |
-| `src/answer.ts` | Whether a reply means "go ahead". |
-| `src/reply.ts` | Appending to the mention's reply file. |
-| `src/session-store.ts` | Remembers which session belongs to which conversation. |
+| Path                   | Role                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `src/cli.ts`           | Entry point: options, wiring, the stdin loop, stop signals.                          |
+| `src/options.ts`       | Flags and config file resolved into one checked object.                              |
+| `src/config-file.ts`   | Reading and checking the settings file.                                              |
+| `src/mention.ts`       | The mention shape, and reading them off stdin.                                       |
+| `src/claude.ts`        | The `claude` process: argv, framing, and the control protocol.                       |
+| `src/patterns.ts`      | What each event means. The one place a shape is read.                                |
+| `src/signals.ts`       | The vocabulary the rest of the program thinks in.                                    |
+| `src/conversation.ts`  | One thread: which mention starts a turn, which answers an ask, and what gets posted. |
+| `src/message.ts`       | What the agent is told, and what the thread sees.                                    |
+| `src/directive.ts`     | The `[model=…, effort=…, interrupt, exit]` group at the start of a mention.          |
+| `src/answer.ts`        | Whether a reply means "go ahead".                                                    |
+| `src/reply.ts`         | Appending to the mention's reply file.                                               |
+| `src/session-store.ts` | Remembers which session belongs to which conversation.                               |

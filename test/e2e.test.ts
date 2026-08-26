@@ -1,6 +1,12 @@
 import { deepStrictEqual, match, ok, strictEqual } from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, describe, it } from "node:test";
@@ -39,16 +45,39 @@ type StartOptions = {
   conversationKey?: string;
 };
 
-function start({ dir, scenario = "plain", args = [], env = {}, conversationKey = "test:1" }: StartOptions): Session {
-  const child: ChildProcess = spawn("node", [cliPath, "--binary", stubPath, "--cwd", dir, "--log-level", "debug", ...args], {
-    cwd: resolve(here, ".."),
-    stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, CLAUDE_STUB_SCENARIO: scenario, ...env },
-  });
+function start({
+  dir,
+  scenario = "plain",
+  args = [],
+  env = {},
+  conversationKey = "test:1",
+}: StartOptions): Session {
+  const child: ChildProcess = spawn(
+    "node",
+    [
+      cliPath,
+      "--binary",
+      stubPath,
+      "--cwd",
+      dir,
+      "--log-level",
+      "debug",
+      ...args,
+    ],
+    {
+      cwd: resolve(here, ".."),
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, CLAUDE_STUB_SCENARIO: scenario, ...env },
+    },
+  );
 
   let log = "";
-  child.stdout?.setEncoding("utf8").on("data", (chunk: string) => (log += chunk));
-  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => (log += chunk));
+  child.stdout
+    ?.setEncoding("utf8")
+    .on("data", (chunk: string) => (log += chunk));
+  child.stderr
+    ?.setEncoding("utf8")
+    .on("data", (chunk: string) => (log += chunk));
 
   let seq = 0;
   return {
@@ -78,10 +107,17 @@ function start({ dir, scenario = "plain", args = [], env = {}, conversationKey =
       for (;;) {
         if (existsSync(replyFile)) {
           const body = readFileSync(replyFile, "utf8");
-          if (contains === undefined ? body.trim() !== "" : body.includes(contains)) return body;
+          if (
+            contains === undefined
+              ? body.trim() !== ""
+              : body.includes(contains)
+          )
+            return body;
         }
         if (Date.now() > deadline) {
-          throw new Error(`timed out waiting for ${replyFile}${contains === undefined ? "" : ` to contain ${contains}`}\n${log}`);
+          throw new Error(
+            `timed out waiting for ${replyFile}${contains === undefined ? "" : ` to contain ${contains}`}\n${log}`,
+          );
         }
         await new Promise((r) => setTimeout(r, 25));
       }
@@ -89,7 +125,9 @@ function start({ dir, scenario = "plain", args = [], env = {}, conversationKey =
 
     end() {
       child.stdin?.end();
-      return new Promise((done) => child.once("close", (code) => done({ code, log })));
+      return new Promise((done) =>
+        child.once("close", (code) => done({ code, log })),
+      );
     },
   };
 }
@@ -98,7 +136,11 @@ describe("driving the claude CLI", () => {
   it("posts what the agent said, and tells it where it is", async () => {
     const dir = workspace();
     const transcript = join(dir, "transcript.txt");
-    const session = start({ dir, env: { CLAUDE_STUB_TRANSCRIPT: transcript }, args: ["--no-state"] });
+    const session = start({
+      dir,
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+      args: ["--no-state"],
+    });
 
     const reply = session.send("please look at the flaky test");
     match(await session.waitFor(reply), /stub answered turn 1/);
@@ -120,7 +162,11 @@ describe("driving the claude CLI", () => {
     const session = start({
       dir,
       env: { CLAUDE_STUB_ARGV_FILE: argvFile },
-      args: ["--no-state", "--append-system-prompt", "Work on a branch of your own."],
+      args: [
+        "--no-state",
+        "--append-system-prompt",
+        "Work on a branch of your own.",
+      ],
     });
 
     await session.waitFor(session.send("first"));
@@ -135,16 +181,25 @@ describe("driving the claude CLI", () => {
   it("opens the session once and keeps it for later mentions", async () => {
     const dir = workspace();
     const transcript = join(dir, "transcript.txt");
-    const session = start({ dir, env: { CLAUDE_STUB_TRANSCRIPT: transcript }, args: ["--no-state"] });
+    const session = start({
+      dir,
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+      args: ["--no-state"],
+    });
 
     await session.waitFor(session.send("first"));
     await session.waitFor(session.send("second"));
     await session.end();
 
-    const turns = readFileSync(transcript, "utf8").split("\n---\n").filter((one) => one.trim() !== "");
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
     strictEqual(turns.length, 2);
     match(turns[0] ?? "", /posted back to that thread as a comment/);
-    ok(!(turns[1] ?? "").includes("posted back to that thread as a comment"), "the second mention repeats the framing");
+    ok(
+      !(turns[1] ?? "").includes("posted back to that thread as a comment"),
+      "the second mention repeats the framing",
+    );
     match(turns[1] ?? "", /second/);
   });
 
@@ -193,7 +248,10 @@ describe("driving the claude CLI", () => {
     const stopped = session.send("[int]");
     const body = await session.waitFor(stopped, "Stopped");
     match(body, /Stopped, as asked\./);
-    ok(!body.includes("no longer waiting on an answer"), "the withdrawn ask was narrated as well");
+    ok(
+      !body.includes("no longer waiting on an answer"),
+      "the withdrawn ask was narrated as well",
+    );
     await session.end();
   });
 
@@ -202,9 +260,15 @@ describe("driving the claude CLI", () => {
     const session = start({ dir, scenario: "hang", args: ["--no-state"] });
 
     session.send("do something that never finishes");
-    const exited = await session.waitFor(session.send("[exit]"), "Ended the Claude Code process");
+    const exited = await session.waitFor(
+      session.send("[exit]"),
+      "Ended the Claude Code process",
+    );
     match(exited, /turn it was running went with it/);
-    ok(!exited.includes("The turn failed"), "the process going away was reported as a failure");
+    ok(
+      !exited.includes("The turn failed"),
+      "the process going away was reported as a failure",
+    );
     await session.end();
   });
 
@@ -213,9 +277,15 @@ describe("driving the claude CLI", () => {
     const session = start({ dir, scenario: "ask", args: ["--no-state"] });
 
     await session.waitFor(session.send("write the file"), "needs permission");
-    const exited = await session.waitFor(session.send("[exit]"), "Ended the Claude Code process");
+    const exited = await session.waitFor(
+      session.send("[exit]"),
+      "Ended the Claude Code process",
+    );
     match(exited, /turn it was running went with it/);
-    ok(!exited.includes("no longer waiting on an answer"), "the ask that died with the process was narrated as well");
+    ok(
+      !exited.includes("no longer waiting on an answer"),
+      "the ask that died with the process was narrated as well",
+    );
     await session.end();
   });
 
@@ -225,7 +295,10 @@ describe("driving the claude CLI", () => {
     const argvFile = join(dir, "argv.json");
     const session = start({
       dir,
-      env: { CLAUDE_STUB_TRANSCRIPT: transcript, CLAUDE_STUB_ARGV_FILE: argvFile },
+      env: {
+        CLAUDE_STUB_TRANSCRIPT: transcript,
+        CLAUDE_STUB_ARGV_FILE: argvFile,
+      },
       args: ["--no-state"],
     });
 
@@ -237,18 +310,29 @@ describe("driving the claude CLI", () => {
 
     // The process that replaced it wrote over the first one's argv on its way up.
     const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
-    ok(argv.includes("--resume=11111111-2222-3333-4444-555555555555"), `expected a resume flag in ${JSON.stringify(argv)}`);
+    ok(
+      argv.includes("--resume=11111111-2222-3333-4444-555555555555"),
+      `expected a resume flag in ${JSON.stringify(argv)}`,
+    );
 
-    const turns = readFileSync(transcript, "utf8").split("\n---\n").filter((one) => one.trim() !== "");
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
     strictEqual(turns.length, 2);
-    ok(!(turns[1] ?? "").includes("posted back to that thread as a comment"), "the replacement was told it was opening a session");
+    ok(
+      !(turns[1] ?? "").includes("posted back to that thread as a comment"),
+      "the replacement was told it was opening a session",
+    );
   });
 
   it("says so when an exit arrives with no process to end", async () => {
     const dir = workspace();
     const session = start({ dir, scenario: "plain", args: ["--no-state"] });
 
-    match(await session.waitFor(session.send("[quit]"), "nothing to end"), /Claude Code was not running/);
+    match(
+      await session.waitFor(session.send("[quit]"), "nothing to end"),
+      /Claude Code was not running/,
+    );
     await session.end();
   });
 
@@ -256,7 +340,10 @@ describe("driving the claude CLI", () => {
     const dir = workspace();
     const session = start({ dir, scenario: "plain", args: ["--no-state"] });
 
-    match(await session.waitFor(session.send("[stop]"), "nothing to stop"), /Nothing was running/);
+    match(
+      await session.waitFor(session.send("[stop]"), "nothing to stop"),
+      /Nothing was running/,
+    );
     await session.end();
   });
 
@@ -266,7 +353,10 @@ describe("driving the claude CLI", () => {
 
     await session.waitFor(session.send("write the file"), "needs permission");
     const second = session.send("no, that file is generated");
-    match(await session.waitFor(second), /stub was told: no, that file is generated/);
+    match(
+      await session.waitFor(second),
+      /stub was told: no, that file is generated/,
+    );
     await session.end();
   });
 
@@ -274,18 +364,28 @@ describe("driving the claude CLI", () => {
     const dir = workspace();
     const session = start({ dir, scenario: "question", args: ["--no-state"] });
 
-    const asked = await session.waitFor(session.send("ask me something"), "has a question");
+    const asked = await session.waitFor(
+      session.send("ask me something"),
+      "has a question",
+    );
     match(asked, /Tabs or spaces\?/);
     match(asked, /- `Tabs`: hard tabs/);
 
     const second = session.send("spaces");
-    match(await session.waitFor(second), /The person you asked replied, in the thread: spaces/);
+    match(
+      await session.waitFor(second),
+      /The person you asked replied, in the thread: spaces/,
+    );
     await session.end();
   });
 
   it("approves everything under --approval allow", async () => {
     const dir = workspace();
-    const session = start({ dir, scenario: "ask", args: ["--no-state", "--approval", "allow"] });
+    const session = start({
+      dir,
+      scenario: "ask",
+      args: ["--no-state", "--approval", "allow"],
+    });
 
     const reply = session.send("write the file");
     match(await session.waitFor(reply), /stub wrote the file/);
@@ -294,17 +394,31 @@ describe("driving the claude CLI", () => {
 
   it("still waits on a question under --approval allow", async () => {
     const dir = workspace();
-    const session = start({ dir, scenario: "question", args: ["--no-state", "--approval", "allow"] });
+    const session = start({
+      dir,
+      scenario: "question",
+      args: ["--no-state", "--approval", "allow"],
+    });
 
-    match(await session.waitFor(session.send("ask me something"), "has a question"), /Tabs or spaces\?/);
+    match(
+      await session.waitFor(session.send("ask me something"), "has a question"),
+      /Tabs or spaces\?/,
+    );
     const second = session.send("spaces");
-    match(await session.waitFor(second), /The person you asked replied, in the thread: spaces/);
+    match(
+      await session.waitFor(second),
+      /The person you asked replied, in the thread: spaces/,
+    );
     await session.end();
   });
 
   it("refuses a question under --approval deny", async () => {
     const dir = workspace();
-    const session = start({ dir, scenario: "question", args: ["--no-state", "--approval", "deny"] });
+    const session = start({
+      dir,
+      scenario: "question",
+      args: ["--no-state", "--approval", "deny"],
+    });
 
     const reply = session.send("ask me something");
     match(await session.waitFor(reply), /nobody at a keyboard to answer that/);
@@ -313,7 +427,11 @@ describe("driving the claude CLI", () => {
 
   it("refuses everything under --approval deny, and says what it skipped", async () => {
     const dir = workspace();
-    const session = start({ dir, scenario: "ask", args: ["--no-state", "--approval", "deny"] });
+    const session = start({
+      dir,
+      scenario: "ask",
+      args: ["--no-state", "--approval", "deny"],
+    });
 
     const reply = session.send("write the file");
     const body = await session.waitFor(reply, "stopped short of running");
@@ -321,33 +439,98 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
-  it("runs mentions one at a time, in the order they arrived", async () => {
+  it("steers a mention that arrives mid-turn into the turn already running", async () => {
     const dir = workspace();
     const transcript = join(dir, "transcript.txt");
-    const session = start({ dir, scenario: "slow", env: { CLAUDE_STUB_TRANSCRIPT: transcript }, args: ["--no-state"] });
+    const steers = join(dir, "steers.txt");
+    const session = start({
+      dir,
+      scenario: "steer",
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript, CLAUDE_STUB_STEERS: steers },
+      args: ["--no-state"],
+    });
 
-    // Both written before the first turn can finish, so the second has to queue.
+    // The stub holds turn 1's answer until it is steered, so nothing here races it.
     const first = session.send("first");
     const second = session.send("second");
-    match(await session.waitFor(first), /stub answered turn 1: first/);
-    match(await session.waitFor(second), /stub answered turn 2: second/);
+
+    // Told to the comment that steered it, since nothing else says it landed.
+    match(await session.waitFor(second, "already working"), /at its next step/);
+    match(await session.waitFor(second, "stub answered"), /steered: second/);
     await session.end();
 
-    const turns = readFileSync(transcript, "utf8").split("\n---\n").filter((one) => one.trim() !== "");
+    // One turn, not two: the second mention joined the first rather than following it.
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 1);
+    match(turns[0] ?? "", /first/);
+
+    // A steer is told it is one, so the agent reads it as a change of course.
+    const landed = readFileSync(steers, "utf8");
+    match(landed, /while you were still working/);
+    match(landed, /from @suchipi via github issue_comment/);
+    match(landed, /second$/m);
+
+    // The answer went to the comment that steered it, not the one that started the turn.
+    ok(
+      !existsSync(first) ||
+        !readFileSync(first, "utf8").includes("stub answered"),
+      "the turn answered under the first mention",
+    );
+  });
+
+  it("queues a mention that changes the model rather than steering with it", async () => {
+    const dir = workspace();
+    const transcript = join(dir, "transcript.txt");
+    const argvFile = join(dir, "argv.json");
+    const session = start({
+      dir,
+      scenario: "steer",
+      env: {
+        CLAUDE_STUB_TRANSCRIPT: transcript,
+        CLAUDE_STUB_ARGV_FILE: argvFile,
+      },
+      args: ["--no-state"],
+    });
+
+    // Never steers, so turn 1 answers on the stub's backstop and this one follows it.
+    const first = session.send("first", "a");
+    const second = session.send("[model=opus] second", "b");
+    match(await session.waitFor(first, "stub answered"), /turn 1: first/);
+    match(await session.waitFor(second, "stub answered"), /second/);
+    await session.end();
+
+    // Two turns: a start-up flag cannot be folded into a turn already running.
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
     strictEqual(turns.length, 2);
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(
+      argv.includes("opus"),
+      `expected the new model in ${JSON.stringify(argv)}`,
+    );
   });
 
   it("answers a waiting request with the next mention, not with a new turn", async () => {
     const dir = workspace();
     const transcript = join(dir, "transcript.txt");
-    const session = start({ dir, scenario: "ask", env: { CLAUDE_STUB_TRANSCRIPT: transcript }, args: ["--no-state"] });
+    const session = start({
+      dir,
+      scenario: "ask",
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+      args: ["--no-state"],
+    });
 
     await session.waitFor(session.send("write the file"), "needs permission");
     await session.waitFor(session.send("approve"), "stub wrote the file");
     await session.end();
 
     // One turn, not two: the approval was a decision, not another thing to run.
-    const turns = readFileSync(transcript, "utf8").split("\n---\n").filter((one) => one.trim() !== "");
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
     strictEqual(turns.length, 1);
   });
 
@@ -376,12 +559,19 @@ describe("driving the claude CLI", () => {
     strictEqual(entry?.sessionId, "11111111-2222-3333-4444-555555555555");
     strictEqual(entry?.cwd, resolve(dir));
 
-    const second = start({ dir, args: ["--state-file", stateFile], env: { CLAUDE_STUB_ARGV_FILE: argvFile } });
+    const second = start({
+      dir,
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+    });
     await second.waitFor(second.send("second", "b"));
     await second.end();
 
     const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
-    ok(argv.includes(`--resume=${entry.sessionId}`), `expected a resume flag in ${JSON.stringify(argv)}`);
+    ok(
+      argv.includes(`--resume=${entry.sessionId}`),
+      `expected a resume flag in ${JSON.stringify(argv)}`,
+    );
   });
 
   it("remembers a setting from a group that ran no turn", async () => {
@@ -395,12 +585,20 @@ describe("driving the claude CLI", () => {
     await first.waitFor(first.send("[effort=max]", "a"), "effort `max`");
     await first.end();
 
-    const second = start({ dir, args: ["--state-file", stateFile], env: { CLAUDE_STUB_ARGV_FILE: argvFile } });
+    const second = start({
+      dir,
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+    });
     await second.waitFor(second.send("hello", "b"));
     await second.end();
 
     const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
-    strictEqual(argv[argv.indexOf("--effort") + 1], "max", `expected the remembered effort in ${JSON.stringify(argv)}`);
+    strictEqual(
+      argv[argv.indexOf("--effort") + 1],
+      "max",
+      `expected the remembered effort in ${JSON.stringify(argv)}`,
+    );
   });
 
   it("passes the flags claude needs to speak this protocol", async () => {
@@ -408,7 +606,16 @@ describe("driving the claude CLI", () => {
     const argvFile = join(dir, "argv.json");
     const session = start({
       dir,
-      args: ["--no-state", "--model", "opus", "--effort", "high", "--permission-mode", "acceptEdits", "--claude-arg=--fallback-model=sonnet"],
+      args: [
+        "--no-state",
+        "--model",
+        "opus",
+        "--effort",
+        "high",
+        "--permission-mode",
+        "acceptEdits",
+        "--claude-arg=--fallback-model=sonnet",
+      ],
       env: { CLAUDE_STUB_ARGV_FILE: argvFile },
     });
     await session.waitFor(session.send("hello"));
@@ -446,7 +653,10 @@ describe("driving the claude CLI", () => {
     await session.waitFor(session.send("hello"));
     await session.end();
 
-    const lines = readFileSync(record, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { type: string });
+    const lines = readFileSync(record, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string });
     ok(lines.some((event) => event.type === "system"));
     ok(lines.some((event) => event.type === "result"));
   });

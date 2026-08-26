@@ -24,7 +24,11 @@ function ask(over: Partial<Ask> = {}): Ask {
   return {
     kind: "ask",
     requestId: "r1",
-    tool: { name: "Write", input: { file_path: "/repo/notes.txt", content: "hi" }, toolUseId: "t1" },
+    tool: {
+      name: "Write",
+      input: { file_path: "/repo/notes.txt", content: "hi" },
+      toolUseId: "t1",
+    },
     isQuestion: false,
     title: undefined,
     description: undefined,
@@ -38,7 +42,10 @@ describe("what the agent is told", () => {
     const opening = say.firstMessage(mention, "please fix the flaky test");
     match(opening, /^\[github:acme\/widgets#7\] Flaky test in CI\n/);
     match(opening, /from @suchipi via github issue_comment/);
-    match(opening, /https:\/\/github\.com\/acme\/widgets\/issues\/7#issuecomment-100/);
+    match(
+      opening,
+      /https:\/\/github\.com\/acme\/widgets\/issues\/7#issuecomment-100/,
+    );
     match(opening, /posted back to that thread as a comment/);
     match(opening, /please fix the flaky test$/);
   });
@@ -50,12 +57,32 @@ describe("what the agent is told", () => {
   });
 
   it("says something when the mention was only the trigger phrase", () => {
-    match(say.followUpMessage(mention, ""), /no text beyond the trigger phrase/);
+    match(
+      say.followUpMessage(mention, ""),
+      /no text beyond the trigger phrase/,
+    );
+  });
+
+  it("tells a steered agent this changes the turn rather than starting one", () => {
+    const steer = say.steerMessage(mention, "check the release branch instead");
+    // Repeated because whoever steers a turn need not be whoever started it.
+    match(steer, /from @suchipi via github issue_comment/);
+    match(steer, /while you were still working/);
+    match(steer, /part of this turn/);
+    doesNotMatch(steer, /posted back to that thread as a comment/);
+    match(steer, /check the release branch instead$/);
+  });
+
+  it("warns the agent that a comment can reach it part-way through a turn", () => {
+    match(say.systemPrompt("ask"), /part-way through the turn you are on/);
   });
 
   it("prefers the prompt over the raw text, and falls back when the prompt is empty", () => {
     strictEqual(say.spokenText(mention), "please fix the flaky test");
-    strictEqual(say.spokenText({ ...mention, prompt: "" }), "@my-bot please fix the flaky test");
+    strictEqual(
+      say.spokenText({ ...mention, prompt: "" }),
+      "@my-bot please fix the flaky test",
+    );
   });
 
   it("tells the agent how waiting works, differently per approval mode", () => {
@@ -89,7 +116,11 @@ describe("what the thread sees", () => {
     const notice = say.askNotice(
       ask({
         description: "List repo contents",
-        tool: { name: "Bash", toolUseId: "t7", input: { command: "ls -la", description: "List repo contents" } },
+        tool: {
+          name: "Bash",
+          toolUseId: "t7",
+          input: { command: "ls -la", description: "List repo contents" },
+        },
       }),
     );
     match(notice, /run the shell command `ls -la` \(List repo contents\)\./);
@@ -98,7 +129,13 @@ describe("what the thread sees", () => {
 
   it("still shows the Bash arguments the sentence leaves out", () => {
     const notice = say.askNotice(
-      ask({ tool: { name: "Bash", toolUseId: "t8", input: { command: "npm test", run_in_background: true } } }),
+      ask({
+        tool: {
+          name: "Bash",
+          toolUseId: "t8",
+          input: { command: "npm test", run_in_background: true },
+        },
+      }),
     );
     match(notice, /run the shell command `npm test`\./);
     match(notice, /run_in_background/);
@@ -114,7 +151,13 @@ describe("what the thread sees", () => {
           toolUseId: "t2",
           input: {
             questions: [
-              { question: "Tabs or spaces?", options: [{ label: "Tabs", description: "hard tabs" }, { label: "Spaces", description: "soft tabs" }] },
+              {
+                question: "Tabs or spaces?",
+                options: [
+                  { label: "Tabs", description: "hard tabs" },
+                  { label: "Spaces", description: "soft tabs" },
+                ],
+              },
             ],
           },
         },
@@ -130,7 +173,11 @@ describe("what the thread sees", () => {
     const notice = say.askNotice(
       ask({
         isQuestion: true,
-        tool: { name: "AskUserQuestion", toolUseId: "t3", input: { questions: [{ question: "One?" }, { question: "Two?" }] } },
+        tool: {
+          name: "AskUserQuestion",
+          toolUseId: "t3",
+          input: { questions: [{ question: "One?" }, { question: "Two?" }] },
+        },
       }),
     );
     match(notice, /1\. One\?/);
@@ -138,20 +185,43 @@ describe("what the thread sees", () => {
   });
 
   it("still says something useful when a question arrives without any", () => {
-    const notice = say.askNotice(ask({ isQuestion: true, tool: { name: "AskUserQuestion", toolUseId: "t4", input: {} } }));
+    const notice = say.askNotice(
+      ask({
+        isQuestion: true,
+        tool: { name: "AskUserQuestion", toolUseId: "t4", input: {} },
+      }),
+    );
     match(notice, /only a person can give it/);
   });
 
   it("collapses a long argument onto one line", () => {
-    const notice = say.askNotice(ask({ tool: { name: "Write", toolUseId: "t5", input: { content: "a\nb\n".repeat(400) } } }));
-    strictEqual(notice.split("\n").some((line) => line.length > 400), false);
+    const notice = say.askNotice(
+      ask({
+        tool: {
+          name: "Write",
+          toolUseId: "t5",
+          input: { content: "a\nb\n".repeat(400) },
+        },
+      }),
+    );
+    strictEqual(
+      notice.split("\n").some((line) => line.length > 400),
+      false,
+    );
     match(notice, /\.\.\./);
   });
 
   it("lists what an unattended run refused to run", () => {
-    const notice = say.denialNotice([{ toolName: "Bash", toolUseId: "t6", input: { command: "rm -rf /" } }]);
+    const notice = say.denialNotice([
+      { toolName: "Bash", toolUseId: "t6", input: { command: "rm -rf /" } },
+    ]);
     match(notice, /stopped short of running/);
     match(notice, /`Bash`/);
+  });
+
+  it("tells the thread a mid-turn mention reached the running turn", () => {
+    match(say.steeredNotice(), /already working/);
+    match(say.steeredNotice(), /at its next step/);
   });
 
   it("says a stopped turn was stopped, not that it failed", () => {
@@ -168,7 +238,16 @@ describe("what the thread sees", () => {
   });
 
   it("confirms a settings change", () => {
-    match(say.directiveNotice({ model: "opus" }, { model: "opus", effort: "high" }), /now on model `opus`\.$/);
-    match(say.directiveNotice({ model: "opus", effort: "max" }, { model: "opus", effort: "max" }), /model `opus` and effort `max`/);
+    match(
+      say.directiveNotice({ model: "opus" }, { model: "opus", effort: "high" }),
+      /now on model `opus`\.$/,
+    );
+    match(
+      say.directiveNotice(
+        { model: "opus", effort: "max" },
+        { model: "opus", effort: "max" },
+      ),
+      /model `opus` and effort `max`/,
+    );
   });
 });
