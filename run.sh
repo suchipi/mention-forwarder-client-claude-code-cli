@@ -16,6 +16,8 @@
 #   TRIGGER                the phrase that counts as a mention (default: @my-bot)
 #   SIM_PLATFORM           github, slack, or linear: also run the simulator, against that one
 #   SIM_PORT               the simulator's port (default: 4000)
+#   WEB_PORT               the client's web view, on 127.0.0.1 (default: 4100; 0 for none).
+#                          Read when the config is first written.
 set -euo pipefail
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +26,7 @@ config_dir="${CONFIG_DIR:-$repo/.run}"
 agent_cwd="${AGENT_CWD:-$config_dir/workspace}"
 trigger="${TRIGGER:-@my-bot}"
 sim_port="${SIM_PORT:-4000}"
+web_port="${WEB_PORT:-4100}"
 
 forwarder_config="$config_dir/mention-forwarder.config.json"
 client_config="$config_dir/mention-forwarder-claude-code.config.json"
@@ -79,6 +82,7 @@ if [[ ! -f $client_config ]]; then
   "permissionMode": "acceptEdits",
   "progress": "all",
   "askTimeoutSeconds": 0,
+  "webPort": $web_port,
   "logLevel": "info"
 }
 JSON
@@ -169,15 +173,42 @@ webhook_port="$(node -e '
   process.stdout.write(String(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).port ?? 3000));
 ' "$effective_config")"
 
+# Read back rather than trusted: WEB_PORT only seeds a config that was not there
+# yet, so the file is what the client will actually serve on.
+web_port="$(node -e '
+  process.stdout.write(String(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).webPort ?? 4100));
+' "$client_config")"
+
+if [[ $web_port != 0 && $web_port == "$webhook_port" ]]; then
+  say "the web view's port $web_port is the forwarder's own; change webPort in $client_config" >&2
+  exit 1
+fi
+
 sim_pid=""
+view_pid=""
 cleanup() {
   if [[ -n $sim_pid ]]; then kill "$sim_pid" 2>/dev/null || true; fi
+  if [[ -n $view_pid ]]; then kill "$view_pid" 2>/dev/null || true; fi
 }
 trap cleanup EXIT INT TERM
+
+# A conversation's process exists only between its first mention and
+# sessionIdleMs after its last, so a view served by one of those is only up while
+# there is a thread to serve it. This one is up the whole time; a conversation
+# that finds the port taken carries on without a view of its own.
+if [[ $web_port != 0 ]]; then
+  node "$repo/src/cli.ts" --config "$client_config" "$@" --web-only \
+    > >(prefix conversations) 2>&1 &
+  view_pid=$!
+fi
 
 if [[ -n ${SIM_PLATFORM:-} ]]; then
   if [[ $sim_port == "$webhook_port" ]]; then
     say "SIM_PORT $sim_port is the forwarder's own port; pick another" >&2
+    exit 1
+  fi
+  if [[ $sim_port == "$web_port" ]]; then
+    say "SIM_PORT $sim_port is the client's web view port; pick another" >&2
     exit 1
   fi
   node "$forwarder_dir/simulator/cli.ts" \
@@ -192,6 +223,7 @@ cat <<MESSAGE
   agent works in  $agent_cwd
   client config   $client_config
   webhooks        http://localhost:$webhook_port
+$(if [[ $web_port != 0 ]]; then printf '  conversations   http://127.0.0.1:%s (what every thread is doing right now)\n' "$web_port"; fi)
 $(if [[ -n ${SIM_PLATFORM:-} ]]; then printf '  simulator       http://127.0.0.1:%s (post "%s do something" in a thread)\n' "$sim_port" "$trigger"; fi)
 MESSAGE
 

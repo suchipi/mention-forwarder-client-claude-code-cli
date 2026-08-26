@@ -99,6 +99,7 @@ Anything on `run.sh`'s own command line is passed to this client, which is how y
 | `TRIGGER`               | The phrase that counts as a mention. Default `@my-bot`. Read when the config is first written.                                                   |
 | `SIM_PLATFORM`          | `github`, `slack`, or `linear`. One simulator imitates one platform.                                                                             |
 | `SIM_PORT`              | The simulator's port. Default `4000`.                                                                                                            |
+| `WEB_PORT`              | The [web view](#seeing-what-is-running)'s port. Default `4100`; `0` for none. Read when the config is first written.                              |
 
 ## What the agent is told
 
@@ -362,6 +363,7 @@ Anything you would otherwise pass as a flag can live in `mention-forwarder-claud
 | `claudeArgs`         | `--claude-arg`, a list                                         |
 | `progress`           | `--progress`                                                   |
 | `askTimeoutSeconds`  | `--ask-timeout`                                                |
+| `webPort`            | `--web-port`                                                   |
 | `stateFile`          | `--state-file`, a path taken relative to the config file       |
 | `patternsFile`       | `--patterns`, as above                                         |
 | `recordFile`         | `--record`, as above                                           |
@@ -389,6 +391,54 @@ Which Claude Code session belongs to which conversation is remembered in a small
 
 Entries are only reused for the same working directory, because Claude Code files a session under the directory it ran in. A session that will no longer open is replaced with a new one, once, and the thread starts over rather than failing. `--no-state` turns the file off entirely, which means each new process starts a new session.
 
+## Seeing what is running
+
+<http://127.0.0.1:4100> lists every conversation with a process on this machine right now, and links each one back to the thread it came from. It refreshes itself every two seconds, and there is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
+
+One row per conversation, showing:
+
+| Shown                                     | Read as                                                                                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `RUNNING`, `WAITING`, `IDLE`              | A turn is under way; a turn has stopped for a [permission request or a question](#approvals-and-questions); nothing is running.       |
+| The title, linked                         | The issue or PR title, or the Slack channel. The link is the comment that most recently mentioned the bot there.                      |
+| `Working for 2m 14s, steered 1×`          | How long this turn has been going, and how many comments were [steered](#steering-a-running-turn) into it.                            |
+| `Waiting on Bash for 40s`                 | Which tool, or a question it asked, and how long it has been waiting for somebody to answer in the thread.                            |
+| The model and effort                      | The thread's own, including whatever a [`[model=...]` group](#choosing-the-model) has changed them to.                                |
+| `3 turns of 5 mentions`, `1 queued`       | What this process has done since it started, and how many mentions are waiting for a turn of their own.                               |
+| The working directory, and the session id | The checkout the agent is working in, and the first characters of the Claude Code session, which is enough to find it under `~/.claude/projects`. |
+
+mention-forwarder runs one process per conversation, so no single one of them can see the others. Each publishes what it is doing to `~/.local/state/mention-forwarder-claude-code/live/<pid>.json` (or under `XDG_STATE_HOME`), and they all try for the port: whichever gets it serves the list for all of them, and the rest keep trying every ten seconds, so the view survives that process going away. A file left behind by a process that was killed outright is dropped by the next reader.
+
+`http://127.0.0.1:4100/conversations.json` is the same list as JSON, if you would rather watch it from a script.
+
+### Keeping it up between threads
+
+**A conversation's process only exists between its first mention and `sessionIdleMs` after its last**, so a view served by one of those is only up while there is a thread to serve it — and gone the rest of the time, which is when you are most likely to open it. `--web-only` is a process that serves the list and reads no mentions:
+
+```sh
+mention-forwarder-claude-code --config your-config.json --web-only
+```
+
+Run one beside mention-forwarder and the list is there whether anything is running or not, including to tell you that nothing is. It publishes nothing of its own — it only reads what the conversations publish — and a conversation that finds the port taken carries on without a view of its own, as it does when another conversation has it. [run.sh](./run.sh) starts one for you.
+
+### What can reach it
+
+It listens on every interface and decides per request, so this machine's own address on the network works as well as loopback: `http://192.168.1.218:4100` from your phone on the same wifi, or the machine's own name, or `http://127.0.0.1:4100` here.
+
+| A request from                                                      | Answered            |
+| ------------------------------------------------------------------- | ------------------- |
+| Loopback: `127.0.0.0/8`, `::1`                                      | Yes                 |
+| A private range: `10/8`, `172.16/12`, `192.168/16`, IPv6 `fc00::/7` | Yes                 |
+| Link-local: `169.254/16`, `fe80::/10`                               | Yes                 |
+| `100.64/10`, the shared range Tailscale and the like hand out       | Yes                 |
+| Anywhere else                                                       | No, and it is logged |
+
+A request whose `Host` header is neither a local address nor a name this machine goes by is refused as well, so a hostname somebody else's DNS points here cannot read it through a browser that can.
+
+**It has no password**, so treat it as readable by anything on the network you are on, and by anyone on this machine: thread titles, working directories, and session ids are in it. Do not put it behind a tunnel or a reverse proxy.
+
+`--web-port 0`, or `"webPort": 0`, turns the whole thing off, publishing included. Use it on a network you would not hand this list to.
+
 ## Options
 
 | Option                          | Default                                                      | Meaning                                                                                                                                                 |
@@ -409,6 +459,8 @@ Entries are only reused for the same working directory, because Claude Code file
 | `--ask-timeout <seconds>`       | `0`                                                          | Refuse a waiting request if nobody answers in this long. `0` waits forever.                                                                             |
 | `--state-file <path>`           | `~/.local/state/mention-forwarder-claude-code/sessions.json` | Where conversation-to-session ids are remembered.                                                                                                       |
 | `--no-state`                    | off                                                          | Remember nothing.                                                                                                                                       |
+| `--web-port <port>`             | `4100`                                                       | Where the [web view](#seeing-what-is-running) is served, to local addresses only. `0` serves nothing.                                                    |
+| `--web-only`                    | off                                                          | Serve that view and read no mentions, until stopped. For running one beside mention-forwarder.                                                           |
 | `--patterns <path>`             |                                                              | A module that patches how `claude`'s output is read. See below.                                                                                         |
 | `--record <path>`               |                                                              | Append every raw event from `claude` here.                                                                                                              |
 | `--log-level <level>`           | `info`                                                       | `debug`, `info`, `warn`, or `error`. `debug` adds thinking, tool results, and every event no pattern claimed.                                           |

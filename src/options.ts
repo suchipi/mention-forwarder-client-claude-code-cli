@@ -28,6 +28,8 @@ export type Options = {
   askTimeoutMs: number;
   /** Where conversation-to-session ids are remembered, or undefined to remember nothing. */
   stateFile: string | undefined;
+  /** Port the list of running conversations is served on, to local addresses only. `0` serves nothing. */
+  webPort: number;
   patternsFile: string | undefined;
   recordPath: string | undefined;
   logLevel: Level;
@@ -51,6 +53,9 @@ export type Flags = {
   "ask-timeout"?: string | undefined;
   "state-file"?: string | undefined;
   "no-state"?: boolean | undefined;
+  "web-port"?: string | undefined;
+  /** A mode rather than a setting, so nothing in `Options` comes of it; `cli.ts` reads it. */
+  "web-only"?: boolean | undefined;
   patterns?: string | undefined;
   record?: string | undefined;
   "log-level"?: string | undefined;
@@ -63,9 +68,24 @@ export const LEVELS: readonly string[] = ["debug", "info", "warn", "error"];
 /** What `claude --permission-mode` takes. Checked here so a typo fails at startup, not mid-thread. */
 export const PERMISSION_MODES: readonly string[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
 
-export function defaultStateFile(): string {
+/** Where the web view is served, unless `--web-port` says otherwise. */
+export const DEFAULT_WEB_PORT = 4100;
+
+function stateHome(): string {
   const base = process.env["XDG_STATE_HOME"] ?? join(homedir(), ".local", "state");
-  return join(base, "mention-forwarder-claude-code", "sessions.json");
+  return join(base, "mention-forwarder-claude-code");
+}
+
+export function defaultStateFile(): string {
+  return join(stateHome(), "sessions.json");
+}
+
+/**
+ * Where each process publishes what it is doing, for the web view to list. Kept
+ * apart from the state file so `--no-state` still shows up in the view.
+ */
+export function liveDirectory(): string {
+  return join(stateHome(), "live");
 }
 
 function pick(name: string, chosen: string | undefined, allowed: readonly string[]): string {
@@ -86,6 +106,15 @@ function chooseAskTimeout(flags: Flags, config: ConfigFile): number {
     throw new ConfigError(`--ask-timeout must be zero or a positive number of seconds, got "${flags["ask-timeout"] ?? config.askTimeoutSeconds}"`);
   }
   return Math.round(seconds * 1000);
+}
+
+function chooseWebPort(flags: Flags, config: ConfigFile): number {
+  const port = flags["web-port"] === undefined ? config.webPort : Number(flags["web-port"]);
+  if (port === undefined) return DEFAULT_WEB_PORT;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new ConfigError(`--web-port must be a port number, or 0 to serve nothing, got "${flags["web-port"] ?? config.webPort}"`);
+  }
+  return port;
 }
 
 /** Flags win over the config file, which wins over the built-in defaults. */
@@ -116,6 +145,7 @@ export function resolveOptions(flags: Flags): Options {
     progress: pick("--progress", flags.progress ?? config.progress ?? "all", PROGRESS_MODES) as Progress,
     askTimeoutMs: chooseAskTimeout(flags, config),
     stateFile: flags["no-state"] === true ? undefined : stateFile,
+    webPort: chooseWebPort(flags, config),
     patternsFile: patternsFile === undefined ? undefined : resolve(patternsFile),
     recordPath: recordPath === undefined ? undefined : resolve(recordPath),
     logLevel: pick("--log-level", flags["log-level"] ?? config.logLevel ?? "info", LEVELS) as Level,

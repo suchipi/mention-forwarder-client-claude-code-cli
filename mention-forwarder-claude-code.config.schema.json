@@ -118,6 +118,15 @@
       "markdownDescription": "How long a parked request waits for a person before it is refused. `0` waits forever.\n\nSame as `--ask-timeout`.",
       "examples": [0, 3600]
     },
+    "webPort": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "default": 4100,
+      "description": "Port for the web view: a read-only list of every conversation running on this machine, each linking back to the thread it came from.\n\nIt answers this machine and the network it is on, and nothing else: a request from an address outside loopback, the private ranges, or a mesh VPN's shared range is refused, so it is reachable from your phone on the same wifi but not from the internet. It has no password.\n\nmention-forwarder runs one process per conversation, and they all try for this port; whichever gets it serves the list for all of them, and the rest keep trying in case it goes away. Those processes only exist while their threads are active, so run one process with --web-only beside mention-forwarder to keep the list up between threads.\n\nSet 0 to serve nothing, which also stops each process publishing what it is doing.\n\nSame as --web-port.",
+      "markdownDescription": "Port for the [web view](https://github.com/suchipi/mention-forwarder-client-claude-code-cli#seeing-what-is-running): a read-only list of every conversation running on this machine, each linking back to the thread it came from.\n\nIt answers **this machine and the network it is on**, and nothing else: a request from an address outside loopback, the private ranges, or a mesh VPN's shared range is refused, so it is reachable from your phone on the same wifi but not from the internet. It has no password.\n\nmention-forwarder runs one process per conversation, and they all try for this port; whichever gets it serves the list for all of them, and the rest keep trying in case it goes away. Those processes only exist while their threads are active, so run one process with `--web-only` beside mention-forwarder to keep the list up between threads.\n\nSet `0` to serve nothing, which also stops each process publishing what it is doing.\n\nSame as `--web-port`.",
+      "examples": [4100, 0]
+    },
     "stateFile": {
       "type": "string",
       "description": "Where conversation-to-session ids are remembered, so a thread keeps its history across restarts of this program. A relative path is resolved against this config file's own directory.\n\nDefaults to $XDG_STATE_HOME/mention-forwarder-claude-code/sessions.json, or ~/.local/state/mention-forwarder-claude-code/sessions.json. There is no setting for --no-state; pass that flag to remember nothing.\n\nSame as --state-file.",

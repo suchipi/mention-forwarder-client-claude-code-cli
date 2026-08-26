@@ -25,6 +25,8 @@ export type ConfigFile = {
   claudeArgs?: string[];
   progress?: string;
   askTimeoutSeconds?: number;
+  /** Port the list of running conversations is served on, to local addresses only. `0` serves nothing. */
+  webPort?: number;
   /** Path, resolved against the config file's own directory. */
   stateFile?: string;
   /** Path, resolved against the config file's own directory. */
@@ -51,7 +53,7 @@ const STRING_FIELDS = [
   "logLevel",
 ] as const;
 const STRING_LIST_FIELDS = ["addDirs", "claudeArgs"] as const;
-const NUMBER_FIELDS = ["askTimeoutSeconds"] as const;
+const NUMBER_FIELDS = ["askTimeoutSeconds", "webPort"] as const;
 /** Every setting the file may hold. `mention-forwarder-claude-code.config.schema.json` is checked against it. */
 export const KNOWN_FIELDS: readonly string[] = [...STRING_FIELDS, ...STRING_LIST_FIELDS, ...NUMBER_FIELDS];
 

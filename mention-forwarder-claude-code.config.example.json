@@ -13,6 +13,7 @@
   "claudeArgs": [],
   "progress": "all",
   "askTimeoutSeconds": 0,
+  "webPort": 4100,
   "stateFile": "./sessions.json",
   "patternsFile": "./patterns.example.mjs",
   "recordFile": "./events.jsonl",

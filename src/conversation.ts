@@ -15,6 +15,7 @@ type Ask = Extract<Signal, { kind: "ask" }>;
 /** A turn the CLI is running, and where its output goes. */
 type Turn = {
   mention: Mention;
+  startedAt: string;
   /** Whether anything at all has been posted for this turn. */
   posted: boolean;
   /** Whether the model's own prose has been posted, which decides the end-of-turn fallback. */
@@ -28,11 +29,47 @@ type Turn = {
 /** An ask waiting for somebody to answer it in the thread. */
 type Parked = {
   ask: Ask;
+  since: string;
   timer: NodeJS.Timeout | undefined;
+};
+
+/** The thread a conversation belongs to, as the mention that last reached it described it. */
+export type Thread = {
+  platform: string;
+  /** Issue or PR title, or the Slack channel id. Empty when the platform offers none. */
+  title: string;
+  /** Permalink to the comment or message that did the mentioning. */
+  url: string;
+  author: string;
+  receivedAt: string;
+};
+
+/**
+ * What this process is doing right now, for the web view to publish. Read-only by
+ * construction: nothing in the state machine branches on it.
+ */
+export type ConversationSnapshot = {
+  conversationKey: string | undefined;
+  cwd: string;
+  sessionId: string | undefined;
+  model: string | undefined;
+  effort: string | undefined;
+  state: "idle" | "running" | "waiting";
+  thread: Thread | undefined;
+  turn: { startedAt: string; url: string; author: string; steers: number } | undefined;
+  parked: { tool: string; isQuestion: boolean; since: string } | undefined;
+  /** Mentions waiting for a turn of their own. */
+  queued: number;
+  /** Mentions this process has taken in, however each was spent. */
+  mentions: number;
+  /** Turns it has run to the end. */
+  turns: number;
 };
 
 export type Conversation = {
   handle(mention: Mention): Promise<void>;
+  /** What the process is doing right now. Nothing reads this but the web view. */
+  snapshot(): ConversationSnapshot;
   /**
    * Waits for every mention handed over so far to finish. No more can arrive
    * after this is called, so anything waiting on a person is refused rather than
@@ -87,6 +124,10 @@ export function createConversation({
   let turn: Turn | undefined;
   let parked: Parked | undefined;
   const waiting: Mention[] = [];
+  /** The mention that most recently reached this process, which is what names the thread. */
+  let thread: Thread | undefined;
+  let mentions = 0;
+  let turns = 0;
   /** Set while `stop` is running, so a child that exits then is not reported as a crash. */
   let stopping = false;
   let startedAt = 0;
@@ -159,7 +200,7 @@ export function createConversation({
           }, options.askTimeoutMs)
         : undefined;
     timer?.unref();
-    parked = { ask, timer };
+    parked = { ask, since: new Date().toISOString(), timer };
     log.info("waiting for a person", {
       tool: ask.tool.name,
       requestId: ask.requestId,
@@ -368,6 +409,7 @@ export function createConversation({
     });
 
     turn = undefined;
+    turns += 1;
     remember();
     drain();
   }
@@ -465,6 +507,7 @@ export function createConversation({
   function reportTo(mention: Mention, text: string): void {
     turn = {
       mention,
+      startedAt: new Date().toISOString(),
       posted: false,
       postedText: false,
       interrupted: false,
@@ -573,6 +616,7 @@ export function createConversation({
     const opening = sessionId === undefined;
     turn = {
       mention,
+      startedAt: new Date().toISOString(),
       posted: false,
       postedText: false,
       interrupted: false,
@@ -643,7 +687,43 @@ export function createConversation({
   }
 
   return {
+    snapshot() {
+      return {
+        conversationKey,
+        cwd: options.cwd,
+        sessionId,
+        model: settings.model,
+        effort: settings.effort,
+        state: parked !== undefined ? "waiting" : turn !== undefined ? "running" : "idle",
+        thread,
+        turn:
+          turn === undefined
+            ? undefined
+            : {
+                startedAt: turn.startedAt,
+                url: turn.mention.url,
+                author: turn.mention.author,
+                steers: turn.steers,
+              },
+        parked:
+          parked === undefined
+            ? undefined
+            : { tool: parked.ask.tool.name, isQuestion: parked.ask.isQuestion, since: parked.since },
+        queued: waiting.length,
+        mentions,
+        turns,
+      };
+    },
+
     async handle(mention) {
+      mentions += 1;
+      thread = {
+        platform: mention.platform,
+        title: mention.title,
+        url: mention.url,
+        author: mention.author,
+        receivedAt: mention.receivedAt,
+      };
       conversationKey ??= mention.conversationKey;
       if (conversationKey !== mention.conversationKey) {
         // per-conversation gives one process per thread; anything else is a misconfiguration.

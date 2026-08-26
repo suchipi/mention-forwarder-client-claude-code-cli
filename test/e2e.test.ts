@@ -1,12 +1,15 @@
 import { deepStrictEqual, match, ok, strictEqual } from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import {
   chmodSync,
   existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, describe, it } from "node:test";
@@ -62,12 +65,21 @@ function start({
       dir,
       "--log-level",
       "debug",
+      // Off unless a test asks for it, so a run cannot bind a port or publish
+      // itself into the state directory of whoever is running the tests.
+      "--web-port",
+      "0",
       ...args,
     ],
     {
       cwd: resolve(here, ".."),
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CLAUDE_STUB_SCENARIO: scenario, ...env },
+      env: {
+        ...process.env,
+        XDG_STATE_HOME: dir,
+        CLAUDE_STUB_SCENARIO: scenario,
+        ...env,
+      },
     },
   );
 
@@ -661,4 +673,125 @@ describe("driving the claude CLI", () => {
     ok(lines.some((event) => event.type === "system"));
     ok(lines.some((event) => event.type === "result"));
   });
+
+  it("lists itself, and the thread it came from, on the web view", async () => {
+    const dir = workspace();
+    const port = await freePort();
+    const session = start({
+      dir,
+      args: ["--no-state", "--web-port", String(port)],
+    });
+
+    try {
+      await session.waitFor(session.send("hello"));
+
+      const one = await waitForConversation(port);
+      strictEqual(one.conversationKey, "test:1");
+      strictEqual(one.thread?.title, "A test issue");
+      strictEqual(one.thread?.url, "https://example.com/issues/1#c1");
+      strictEqual(one.thread?.platform, "github");
+      strictEqual(one.cwd, dir);
+      strictEqual(one.state, "idle");
+      strictEqual(one.mentions, 1);
+
+      const page = await fetch(`http://127.0.0.1:${port}/`);
+      match(await page.text(), /Running conversations/);
+    } finally {
+      await session.end();
+    }
+
+    // The entry goes with the process, so a view of it never lists a thread
+    // nothing is working on.
+    deepStrictEqual(
+      readdirSync(join(dir, "mention-forwarder-claude-code", "live")),
+      [],
+    );
+  });
 });
+
+describe("serving the web view on its own", () => {
+  it("stays up with no mentions at all, and lists what a conversation publishes", async () => {
+    const dir = workspace();
+    const port = await freePort();
+    const viewer = spawn("node", [cliPath, "--web-port", String(port), "--web-only"], {
+      cwd: resolve(here, ".."),
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, XDG_STATE_HOME: dir },
+    });
+
+    try {
+      // Nothing is running, which is the answer a person opening it wants.
+      const empty = await waitForJson(port);
+      deepStrictEqual(empty.conversations, []);
+
+      // A conversation finds the port taken and publishes anyway; the viewer lists it.
+      const session = start({
+        dir,
+        args: ["--no-state", "--web-port", String(port)],
+      });
+      await session.waitFor(session.send("hello"));
+      const one = await waitForConversation(port);
+      strictEqual(one.conversationKey, "test:1");
+      await session.end();
+
+      // And it outlives that conversation rather than going with it.
+      const after = await waitForJson(port);
+      ok(Array.isArray(after.conversations), "the viewer stopped answering");
+    } finally {
+      viewer.kill("SIGTERM");
+      await once(viewer, "close");
+    }
+  });
+});
+
+/** A port nothing is listening on, taken and given straight back. */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  probe.listen(0, "127.0.0.1");
+  await once(probe, "listening");
+  const address = probe.address();
+  ok(address !== null && typeof address === "object");
+  const port = address.port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
+type Listed = {
+  conversationKey: string;
+  cwd: string;
+  state: string;
+  mentions: number;
+  turns: number;
+  thread?: { platform: string; title: string; url: string };
+};
+
+/** Answers once the view is up, whatever it has in it. */
+async function waitForJson(port: number): Promise<{ conversations: Listed[] }> {
+  const deadline = Date.now() + 15000;
+  for (;;) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/conversations.json`);
+      return (await response.json()) as { conversations: Listed[] };
+    } catch {
+      if (Date.now() > deadline) throw new Error("the web view never came up");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
+
+/** The view is published on a timer, so the first fetch can beat the first entry. */
+async function waitForConversation(port: number): Promise<Listed> {
+  const deadline = Date.now() + 15000;
+  for (;;) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/conversations.json`);
+      const payload = (await response.json()) as { conversations: Listed[] };
+      const one = payload.conversations[0];
+      if (one !== undefined && one.turns > 0) return one;
+    } catch {
+      // Still coming up.
+    }
+    if (Date.now() > deadline) throw new Error("the web view never listed the conversation");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}

@@ -2,12 +2,14 @@
 import { parseArgs } from "node:util";
 import { ConfigError, DEFAULT_CONFIG_FILE } from "./config-file.ts";
 import { createConversation } from "./conversation.ts";
-import { createLogger } from "./logger.ts";
+import { createLiveRegistry, startPublishing } from "./live.ts";
+import { createLogger, type Logger } from "./logger.ts";
 import { readMentions } from "./mention.ts";
-import { defaultStateFile, resolveOptions } from "./options.ts";
+import { DEFAULT_WEB_PORT, defaultStateFile, liveDirectory, resolveOptions } from "./options.ts";
 import { loadRules } from "./patterns.ts";
 import { createReply } from "./reply.ts";
 import { createSessionStore } from "./session-store.ts";
+import { startWebView } from "./web.ts";
 
 /** How long a stop signal waits for Claude Code to wind down before the process leaves anyway. */
 const STOP_GRACE_MS = 10000;
@@ -61,6 +63,12 @@ Options:
   --state-file <path>       Where conversation-to-session ids are remembered
                             (default ${defaultStateFile()})
   --no-state                Remember nothing, so every process starts a new session
+  --web-port <port>         Serve a list of every conversation running on this
+                            machine, to this machine and the network it is on
+                            (default ${DEFAULT_WEB_PORT}; 0 serves nothing)
+  --web-only                Serve that list and read no mentions, until stopped.
+                            Run one beside mention-forwarder and the list is up
+                            whether a thread is running or not
   --patterns <path>         A module that patches how claude's output is read;
                             see "Pattern detection" in the README
   --record <path>           Append every raw event from claude here, for working
@@ -68,6 +76,37 @@ Options:
   --log-level <level>       debug, info (default), warn, or error
   -h, --help                Show this help
 `;
+
+/**
+ * Serves the web view and nothing else, until this process is asked to stop.
+ *
+ * mention-forwarder starts a conversation's process on its first mention and ends
+ * it once the thread is quiet, so a view served by one of those is only up while
+ * there is a thread to serve it. Run this beside the forwarder and the list is
+ * there whether anything is running or not — including to say that nothing is.
+ *
+ * It has no conversation of its own, so it publishes nothing and only reads what
+ * the conversations publish.
+ */
+async function serveOnly(port: number, log: Logger): Promise<void> {
+  if (port === 0) {
+    throw new ConfigError("--web-only has nothing to serve with --web-port 0");
+  }
+
+  const registry = createLiveRegistry(liveDirectory(), log);
+  const view = startWebView({ port, registry, log, hold: true });
+  log.info("serving the web view only; no mentions are read here", { port });
+
+  await new Promise<void>((resolve) => {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      process.on(signal, () => {
+        log.info(`${signal} received, stopping`);
+        resolve();
+      });
+    }
+  });
+  await view.close();
+}
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -88,6 +127,8 @@ async function main(): Promise<void> {
       "ask-timeout": { type: "string" },
       "state-file": { type: "string" },
       "no-state": { type: "boolean" },
+      "web-port": { type: "string" },
+      "web-only": { type: "boolean" },
       patterns: { type: "string" },
       record: { type: "string" },
       "log-level": { type: "string" },
@@ -102,10 +143,30 @@ async function main(): Promise<void> {
 
   const options = resolveOptions(values);
   const log = createLogger(options.logLevel);
+
+  if (values["web-only"] === true) {
+    await serveOnly(options.webPort, log);
+    return;
+  }
+
   const rules = await loadRules(options.patternsFile, log);
   const store = createSessionStore(options.stateFile, options.cwd, log);
   const reply = createReply(log);
   const conversation = createConversation({ options, rules, store, reply, log });
+
+  let closeView = async () => {};
+  if (options.webPort !== 0) {
+    const registry = createLiveRegistry(liveDirectory(), log);
+    const publisher = startPublishing(registry, conversation.snapshot);
+    const server = startWebView({ port: options.webPort, registry, log });
+    // Covers every way out, including the process.exit below.
+    process.on("exit", () => registry.remove());
+    closeView = async () => {
+      publisher.stop();
+      registry.remove();
+      await server.close();
+    };
+  }
 
   log.info("ready for mentions", {
     binary: options.binary,
@@ -117,6 +178,7 @@ async function main(): Promise<void> {
     progress: options.progress,
     stateFile: options.stateFile ?? "off",
     patterns: options.patternsFile ?? "built in",
+    webPort: options.webPort === 0 ? "off" : options.webPort,
   });
 
   let stopping = false;
@@ -155,6 +217,7 @@ async function main(): Promise<void> {
   log.info("input closed, finishing what is running");
   await conversation.finish();
   await conversation.stop();
+  await closeView();
   log.info("session over");
 }
 
