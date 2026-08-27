@@ -229,10 +229,37 @@ describe("driving the claude CLI", () => {
     const first = session.send("write the file");
     const asked = await session.waitFor(first, "needs permission");
     match(asked, /`Write`/);
-    match(asked, /Reply `approve`/);
+    match(asked, /`approve`, `approved`, `allow`/);
 
     const second = session.send("approve");
     match(await session.waitFor(second), /stub wrote the file/);
+    await session.end();
+  });
+
+  it("lets a person approve a tool that wants a card of its own", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "card", args: ["--no-state"] });
+
+    const asked = await session.waitFor(
+      session.send("make me a worktree"),
+      "needs permission",
+    );
+    match(asked, /`EnterWorktree` on a worktree for ENG-1234/);
+    match(asked, /lily\/a-branch/);
+
+    match(await session.waitFor(session.send("approve")), /stub made the worktree/);
+    await session.end();
+  });
+
+  it("runs a tool that wants a card of its own under --approval allow", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      scenario: "card",
+      args: ["--no-state", "--approval", "allow"],
+    });
+
+    match(await session.waitFor(session.send("make me a worktree")), /stub made the worktree/);
     await session.end();
   });
 
@@ -878,7 +905,7 @@ describe("driving the claude CLI", () => {
     );
     match(asked, /stub is about to write notes\.txt/);
     match(asked, /`Write`/);
-    match(asked, /Reply `approve`/);
+    match(asked, /`approve`, `approved`, `allow`/);
 
     // The turn's own answer still arrives, and only once: letting the prose out
     // early must not spend the end-of-turn post that `final` relies on.

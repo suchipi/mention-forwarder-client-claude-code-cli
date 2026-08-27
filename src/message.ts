@@ -1,3 +1,4 @@
+import { APPROVALS } from "./answer.ts";
 import type { Directive } from "./directive.ts";
 import type { Mention } from "./mention.ts";
 import type { ApprovalMode } from "./options.ts";
@@ -231,6 +232,15 @@ function bashPhrasing(
 }
 
 /**
+ * Every word that means yes, listed rather than exemplified: a person reading a
+ * request in a thread has nowhere else to look up what counts as approving it.
+ */
+function howToApprove(): string {
+  const words = [...APPROVALS].map((word) => (/^[a-z ]+$/.test(word) ? `\`${word}\`` : word)).join(", ");
+  return `Reply with any of these, and nothing else, to allow it: ${words}. Any other reply refuses it, and what you write is given to the agent as the reason.`;
+}
+
+/**
  * What to post when a turn stops for a person. Written in plain text with code
  * spans only, because the same string goes to GitHub, Slack, and Linear, and
  * Slack of the three ignores most markdown.
@@ -245,14 +255,14 @@ export function askNotice(ask: Ask): string {
           : questions
               .map((question, index) => `${index + 1}. ${question}`)
               .join("\n\n");
-      return `The agent has a question:\n\n${body}\n\nReply here with your answer and it will carry on.`;
+      return `The agent has a question:\n\n${body}\n\nReply here with your answer — one of the labels above, or your own words — and it will carry on.`;
     }
     // Not every tool that stops for a person lays its ask out the way
     // `AskUserQuestion` does, so what it was called with is all there is to show.
     const on = ask.description === undefined ? "" : ` on ${inlineCode(ask.description)}`;
     const args = describeInput(ask.tool.input);
     const detail = args === "" ? "" : `\n\n\`${args}\``;
-    return `The agent is waiting on \`${ask.tool.name}\`${on} for something only a person can give it.${detail}\n\nReply here with your answer.`;
+    return `The agent is waiting on \`${ask.tool.name}\`${on} for something only a person can give it.${detail}\n\nReply here with your answer, in your own words: whatever you write is handed to the agent.`;
   }
 
   const bash = bashPhrasing(ask);
@@ -268,7 +278,7 @@ export function askNotice(ask: Ask): string {
       ? ""
       : `\n\nWhy it is asking: ${inlineCode(ask.reason)}`;
 
-  return `The agent needs permission before it can carry on. It wants to run ${what}.${detail}${why}\n\nReply \`approve\` to allow it. Any other reply refuses it, and what you write is given to the agent as the reason.`;
+  return `The agent needs permission before it can carry on. It wants to run ${what}.${detail}${why}\n\n${howToApprove()}`;
 }
 
 /** Given to `AskUserQuestion` as the tool's result, since the tool itself has nobody to ask. */

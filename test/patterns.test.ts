@@ -90,6 +90,19 @@ const EVENTS: Record<string, RawEvent> = {
       requires_user_interaction: true,
     },
   },
+  cardAsk: {
+    type: "control_request",
+    request_id: "b21c0f3a-1d7e-4a55-9c11-8e0f4a2b6d90",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "EnterWorktree",
+      display_name: "EnterWorktree",
+      input: { branch: "lily/a-branch" },
+      description: "a worktree for ENG-1234",
+      tool_use_id: "toolu_01E",
+      requires_user_interaction: true,
+    },
+  },
   cancel: { type: "control_cancel_request", request_id: "e344effc-ae25-4db4-b49b-728131ec85a3" },
   controlResponse: { type: "control_response", response: { subtype: "success", request_id: "mfc-1", response: { commands: [] } } },
   controlError: { type: "control_response", response: { subtype: "error", request_id: "mfc-2", error: "unknown subtype" } },
@@ -220,6 +233,11 @@ describe("recognizing what claude says", () => {
   it("tells a question apart from a permission request", () => {
     const ask = only(EVENTS["questionAsk"] as RawEvent);
     strictEqual(ask.kind === "ask" && ask.isQuestion, true);
+  });
+
+  it("keeps a tool that merely wants a card of its own approvable", () => {
+    const ask = only(EVENTS["cardAsk"] as RawEvent);
+    strictEqual(ask.kind === "ask" && ask.isQuestion, false);
   });
 
   it("reads a withdrawn request", () => {

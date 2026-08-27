@@ -63,8 +63,20 @@ function toolRef(source: Record<string, unknown>, nameKey: string, idKey: string
 // --- the built-in rules, tried in this order ---
 
 /**
+ * `requires_user_interaction` is set by any tool that wants a card of its own,
+ * including ones that go on to do real work once somebody says yes. Only the
+ * tool whose card *is* the question carries questions, and only that one has
+ * nothing a person could approve.
+ */
+function hasNothingToApprove(request: Record<string, unknown>): boolean {
+  if (request["requires_user_interaction"] !== true) return false;
+  return list(record(request["input"])["questions"]).some((entry) => str(record(entry)["question"]) !== undefined);
+}
+
+/**
  * Permission asks and questions. Both arrive as `can_use_tool`; the ones whose
- * own card is the interaction (`AskUserQuestion`) set `requires_user_interaction`.
+ * own card is the interaction (`AskUserQuestion`) set `requires_user_interaction`
+ * and carry the questions themselves.
  */
 const canUseTool: Rule = {
   name: "control-request/can-use-tool",
@@ -80,7 +92,7 @@ const canUseTool: Rule = {
         kind: "ask",
         requestId,
         tool: toolRef(request, "tool_name", "tool_use_id", "input"),
-        isQuestion: request["requires_user_interaction"] === true,
+        isQuestion: hasNothingToApprove(request),
         title: str(request["title"]),
         description: str(request["description"]),
         reason: str(request["decision_reason"]),

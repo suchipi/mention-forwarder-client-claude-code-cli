@@ -1,5 +1,6 @@
 import { doesNotMatch, match, ok, strictEqual } from "node:assert/strict";
 import { describe, it } from "node:test";
+import { APPROVALS } from "../src/answer.ts";
 import { parseDirective } from "../src/directive.ts";
 import * as say from "../src/message.ts";
 import type { Mention } from "../src/mention.ts";
@@ -212,7 +213,7 @@ describe("what the thread sees", () => {
     match(notice, /needs permission/);
     match(notice, /`Write` on notes\.txt/);
     match(notice, /file_path/);
-    match(notice, /Reply `approve`/);
+    match(notice, /Reply with any of these, and nothing else, to allow it/);
   });
 
   it("puts a shell command in the sentence, where Bash's summary would read as an object", () => {
@@ -297,21 +298,25 @@ describe("what the thread sees", () => {
     match(notice, /only a person can give it/);
   });
 
-  it("shows what a tool that stops for a person was called with", () => {
+  it("names every word that approves a permission request", () => {
+    const notice = say.askNotice(ask());
+    for (const word of APPROVALS) ok(notice.includes(word), `${word} was not offered`);
+    match(notice, /Any other reply refuses it/);
+  });
+
+  it("says a question takes words rather than one of the words that approve a tool", () => {
     const notice = say.askNotice(
       ask({
         isQuestion: true,
-        description: "a worktree for ENG-1234",
         tool: {
-          name: "EnterWorktree",
+          name: "AskUserQuestion",
           toolUseId: "t7",
-          input: { branch: "lily/eng-1234-thing" },
+          input: { questions: [{ question: "Which branch?", options: [] }] },
         },
       }),
     );
-    match(notice, /`EnterWorktree` on a worktree for ENG-1234/);
-    match(notice, /lily\/eng-1234-thing/);
-    match(notice, /Reply here with your answer/);
+    match(notice, /one of the labels above, or your own words/);
+    doesNotMatch(notice, /to allow it/);
   });
 
   it("collapses a long argument onto one line", () => {

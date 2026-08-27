@@ -169,13 +169,13 @@ A tool that needs permission:
 >
 > `{"file_path":"/repo/banana.txt","content":"banana"}`
 >
-> Reply `approve` to allow it. Any other reply refuses it, and what you write is given to the agent as the reason.
+> Reply with any of these, and nothing else, to allow it: `approve`, `approved`, `allow`, `allowed`, `yes`, `y`, `ok`, `okay`, `lgtm`, `sure`, `go ahead`, `do it`, `proceed`, `yep`, `yeah`, 👍. Any other reply refuses it, and what you write is given to the agent as the reason.
 
 A shell command, whose summary of what it does goes in the sentence rather than being named as the thing it acts on:
 
 > The agent needs permission before it can carry on. It wants to run the shell command `git push origin main` (Push the branch).
 >
-> Reply `approve` to allow it. Any other reply refuses it, and what you write is given to the agent as the reason.
+> Reply with any of these, and nothing else, to allow it: `approve`, `approved`, `allow`, `allowed`, `yes`, `y`, `ok`, `okay`, `lgtm`, `sure`, `go ahead`, `do it`, `proceed`, `yep`, `yeah`, 👍. Any other reply refuses it, and what you write is given to the agent as the reason.
 
 A question:
 
@@ -186,15 +186,17 @@ A question:
 > - `Tabs`: Use tab characters for indentation
 > - `Spaces`: Use space characters for indentation
 >
-> Reply here with your answer and it will carry on.
+> Reply here with your answer — one of the labels above, or your own words — and it will carry on.
 
-A tool that stops for a person without laying its ask out the way `AskUserQuestion` does — a picker, a confirmation, anything whose own card is the interaction:
+**A tool that wants a card of its own is still a permission request.** Some tools set `requires_user_interaction` because the CLI would normally draw them their own dialog, but they still run something once somebody says yes, so the thread gets a request it can approve:
 
-> The agent is waiting on `EnterWorktree` on a worktree for ENG-1234 for something only a person can give it.
+> The agent needs permission before it can carry on. It wants to run `EnterWorktree` on a worktree for ENG-1234.
 >
 > `{"branch":"lily/eng-1234-thing"}`
 >
-> Reply here with your answer.
+> Reply with any of these, and nothing else, to allow it: `approve`, `approved`, `allow`, `allowed`, `yes`, `y`, `ok`, `okay`, `lgtm`, `sure`, `go ahead`, `do it`, `proceed`, `yep`, `yeah`, 👍. Any other reply refuses it, and what you write is given to the agent as the reason.
+
+Only the tool whose card *is* the question — `AskUserQuestion`, which carries the questions in its own input — has nothing to approve, and only that one takes an answer in words.
 
 ### How to answer
 
@@ -210,7 +212,7 @@ A tool that stops for a person without laying its ask out the way `AskUserQuesti
 
 **A question takes an answer in your own words.** Anything you write is handed to the agent, which carries on with it. There is nothing to match and no wrong reply.
 
-**A permission request takes a yes or anything else.** The whole of what you wrote, with the trigger phrase removed, has to be one of these to count as yes:
+**A permission request takes a yes or anything else.** The request itself lists them, so there is nothing to look up here, but the whole of what you wrote, with the trigger phrase removed, has to be one of these to count as yes:
 
 ```
 approve   approved   allow   allowed   yes   y   ok   okay

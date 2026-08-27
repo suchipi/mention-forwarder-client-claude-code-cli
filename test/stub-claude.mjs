@@ -67,6 +67,51 @@ function emitResult(text, extra = {}) {
   });
 }
 
+/** The three shapes a `can_use_tool` ask arrives in, one scenario each. */
+const ASKS = {
+  ask: {
+    prose: "stub is about to write notes.txt",
+    allowed: "stub wrote the file",
+    request: {
+      tool_name: "Write",
+      input: { file_path: "notes.txt", content: "hi" },
+      description: "notes.txt",
+    },
+  },
+  question: {
+    prose: "stub is about to ask something",
+    allowed: "stub wrote the file",
+    request: {
+      tool_name: "AskUserQuestion",
+      requires_user_interaction: true,
+      input: {
+        questions: [
+          {
+            question: "Tabs or spaces?",
+            header: "Style",
+            options: [
+              { label: "Tabs", description: "hard tabs" },
+              { label: "Spaces", description: "soft tabs" },
+            ],
+          },
+        ],
+      },
+    },
+  },
+  // A tool that wants a card of its own and still does real work once somebody
+  // says yes, which is what must not be mistaken for a question.
+  card: {
+    prose: "stub is about to make a worktree",
+    allowed: "stub made the worktree",
+    request: {
+      tool_name: "EnterWorktree",
+      requires_user_interaction: true,
+      input: { branch: "lily/a-branch" },
+      description: "a worktree for ENG-1234",
+    },
+  },
+};
+
 let pendingAsk;
 /** Set while a turn is deliberately holding its answer back, so a test can land a message inside it. */
 let pendingAnswer;
@@ -88,11 +133,12 @@ function runTurn(text) {
     appendFileSync(process.env.CLAUDE_STUB_TRANSCRIPT, `${text}\n---\n`);
   }
 
-  if ((scenario === "ask" || scenario === "question") && turns === 1) {
+  const shape = ASKS[scenario];
+  if (shape !== undefined && turns === 1) {
     const requestId = "ask-1";
     // The model says what it is about to do before it asks to do it, which is
     // the context `--progress final` would otherwise keep from the thread.
-    emitText("stub is about to write notes.txt");
+    emitText(shape.prose);
     out({
       type: "assistant",
       message: {
@@ -102,8 +148,8 @@ function runTurn(text) {
           {
             type: "tool_use",
             id: "toolu_1",
-            name: "Write",
-            input: { file_path: "notes.txt", content: "hi" },
+            name: shape.request.tool_name,
+            input: shape.request.input,
           },
         ],
       },
@@ -113,28 +159,7 @@ function runTurn(text) {
     out({
       type: "control_request",
       request_id: requestId,
-      request: {
-        subtype: "can_use_tool",
-        tool_name: scenario === "question" ? "AskUserQuestion" : "Write",
-        input:
-          scenario === "question"
-            ? {
-                questions: [
-                  {
-                    question: "Tabs or spaces?",
-                    header: "Style",
-                    options: [
-                      { label: "Tabs", description: "hard tabs" },
-                      { label: "Spaces", description: "soft tabs" },
-                    ],
-                  },
-                ],
-              }
-            : { file_path: "notes.txt", content: "hi" },
-        tool_use_id: "toolu_1",
-        description: "notes.txt",
-        ...(scenario === "question" ? { requires_user_interaction: true } : {}),
-      },
+      request: { subtype: "can_use_tool", tool_use_id: "toolu_1", ...shape.request },
     });
     pendingAsk = requestId;
     return;
@@ -188,7 +213,7 @@ function settleAsk(response) {
     session_id: sessionId,
   });
   const text = allowed
-    ? "stub wrote the file"
+    ? ASKS[scenario].allowed
     : `stub was told: ${String(response?.message ?? "")}`;
   emitText(text);
   emitResult(
@@ -198,7 +223,7 @@ function settleAsk(response) {
       : {
           permission_denials: [
             {
-              tool_name: "Write",
+              tool_name: ASKS[scenario].request.tool_name,
               tool_use_id: "toolu_1",
               tool_input: { file_path: "notes.txt" },
             },
