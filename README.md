@@ -129,6 +129,8 @@ A few lines are also appended to the session's system prompt, because Claude Cod
 
 The thread's link is the mention's own permalink, from whichever mention started the process, and it comes with a note that only the mentions themselves reach the agent, so the rest of the thread is worth reading. A mention that arrives without a permalink leaves the line out.
 
+The system prompt also asks the agent for one thing back: when it opens a pull request, it writes a line naming that pull request into a file this program reads on the way up. That is what lets the thread the pull request becomes carry on from the session that opened it, and [Threads that come out of other threads](#threads-that-come-out-of-other-threads) is the whole of how. Under `--no-state` there is nowhere to write it, so the request is left out.
+
 ### Telling it something of your own
 
 `appendSystemPrompt` goes after those lines, at the end of the system prompt, so it is where standing instructions belong: where to do the work, a house style for replies, anything every thread should be told.
@@ -392,6 +394,26 @@ Which Claude Code session belongs to which conversation is remembered in a small
 
 Entries are only reused for the same working directory, because Claude Code files a session under the directory it ran in. A session that will no longer open is replaced with a new one, once, and the thread starts over rather than failing. `--no-state` turns the file off entirely, which means each new process starts a new session.
 
+### Threads that come out of other threads
+
+A thread that ends in a pull request has a second thread coming: the pull request's own. It is a different `conversationKey`, so by default a different session, and the agent answering `@bot` there starts knowing nothing about the work it is being asked about. Instead, the session that did the work is **forked** into that thread, and the answer comes from an agent with the whole of the first thread behind it.
+
+It takes both halves. The agent writes the pull request down: its system prompt asks it, as soon as the pull request exists, to append one line to a file that sits beside the state file — `~/.local/state/mention-forwarder-claude-code/forks/forks.jsonl` unless `--state-file` says otherwise:
+
+```json
+{ "url": "https://github.com/acme/widgets/pull/12", "from": "slack:T024BE7LD:C0G9QF9GW:1755973451.000100" }
+```
+
+`url` is the pull request it just opened and `from` is its own conversation, filled into the request for it. That directory, and nothing else of the state, is handed to `claude` as one the agent may write in, so recording a pull request is not a permission request posted back to the thread. Nothing in this program ever writes there: a line is a claim by whoever wrote it, the file is only ever appended to, and the newest line claiming a url wins.
+
+The next process reads it. A mention whose url is a recorded pull request, or anything under one, starts `claude` with `--resume=<the session of the thread that recorded it> --fork-session`: that history is copied into a session of its own, which is this thread's from then on. The thread it came out of keeps its own session and carries on untouched, which is why this forks rather than resumes — two threads writing into one session would each find the other's turns in their history. The first message of a forked session says so, because everything above it was said somewhere else, to people who cannot see this thread.
+
+A forked thread also starts on the model and the effort the thread it came from was on, so the pull request is answered by whatever did the work rather than by the defaults, and the pair is then remembered under the new thread's own key. Anything the new thread had already settled for itself with a `[model=…]` group stays as it is; only what it had not chosen comes across.
+
+Urls are matched without their fragment, query or case, so a comment permalink (`…/pull/12#issuecomment-9`), a review comment (`…#discussion_r7`) and a file view (`…/pull/12/files`) all name the same pull request. Nothing prunes the file, and a line in it is only ever read for a conversation that has no session of its own yet.
+
+Forking goes through the same store as everything else, so the rules above hold: a session remembered for another working directory is not forked, and one that will no longer open leaves the new thread to start on its own instead of failing. `--no-state` turns this off along with the rest.
+
 ## Seeing what is running
 
 <http://127.0.0.1:4100> lists every conversation with a process on this machine right now, and links each one back to the thread it came from. It refreshes itself every two seconds, and there is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
@@ -458,8 +480,8 @@ A request whose `Host` header is neither a local address nor a name this machine
 | `--claude-arg <arg>`            |                                                              | Passed to `claude` untouched, after everything this program sets. Repeatable. Use `--claude-arg=--flag` when the argument starts with a dash.           |
 | `--progress <mode>`             | `all`                                                        | `all` posts what the agent says as it says it; `final` posts only its answer.                                                                           |
 | `--ask-timeout <seconds>`       | `0`                                                          | Refuse a waiting request if nobody answers in this long. `0` waits forever.                                                                             |
-| `--state-file <path>`           | `~/.local/state/mention-forwarder-claude-code/sessions.json` | Where conversation-to-session ids are remembered.                                                                                                       |
-| `--no-state`                    | off                                                          | Remember nothing.                                                                                                                                       |
+| `--state-file <path>`           | `~/.local/state/mention-forwarder-claude-code/sessions.json` | Where conversation-to-session ids are remembered. The `forks` directory beside it is where a thread records the pull requests it opens.                 |
+| `--no-state`                    | off                                                          | Remember nothing, and let no thread fork another.                                                                                                       |
 | `--web-port <port>`             | `4100`                                                       | Where the [web view](#seeing-what-is-running) is served, to local addresses only. `0` serves nothing.                                                    |
 | `--web-only`                    | off                                                          | Serve that view and read no mentions, until stopped. For running one beside mention-forwarder.                                                           |
 | `--patterns <path>`             |                                                              | A module that patches how `claude`'s output is read. See below.                                                                                         |
@@ -477,7 +499,7 @@ One `claude` process per conversation, started like this:
 claude --print
        --input-format stream-json --output-format stream-json --verbose
        --permission-prompt-tool stdio
-       [--resume=<session id>] [--model …] [--effort …] [--permission-mode …]
+       [--resume=<session id>] [--fork-session] [--model …] [--effort …] [--permission-mode …]
        --append-system-prompt <the framing above>
 ```
 

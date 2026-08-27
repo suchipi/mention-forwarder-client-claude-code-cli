@@ -15,6 +15,22 @@ function threadContext(mention: Mention): string[] {
   ];
 }
 
+/** Where a session is to write down what it opened, and the name it writes down as. */
+export type ForkRecord = { path: string; from: string };
+
+/**
+ * How the agent is asked to record a pull request it opens, so the thread that
+ * pull request becomes can pick up where this one left off. Asking is the only
+ * way: the agent is the only thing here that knows a pull request happened.
+ */
+function forkNote(record: ForkRecord): string {
+  return [
+    `When you open a pull request, write it down, so that mentions arriving on that pull request reach an agent that already knows this work: append one line to ${record.path}, exactly {"url": "<the pull request's url>", "from": "${record.from}"} with the url filled in, as soon as the pull request exists.`,
+    "Append it with a shell redirect (>>) rather than rewriting the file, because other threads are writing down their own work in it at the same time.",
+    "A mention that arrives on a url recorded there starts as a fork of the session that recorded it, carrying everything said here into that thread. Nothing else belongs in that file.",
+  ].join(" ");
+}
+
 /**
  * Appended to the session's system prompt. Claude Code otherwise has every
  * reason to believe it is talking to someone at a terminal, and the difference
@@ -25,8 +41,10 @@ function threadContext(mention: Mention): string[] {
  *
  * `extra` is whatever the operator put in `appendSystemPrompt`, added last so
  * their standing instructions read as the final word on how the bot behaves.
+ * `record` is last as an argument and second to last in the prompt, for that
+ * same reason.
  */
-export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: string): string {
+export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: string, record?: ForkRecord): string {
   const waiting: Record<ApprovalMode, string> = {
     ask: "When you need permission to run a tool, or ask a question with AskUserQuestion, it is posted to the thread and your turn waits there until somebody answers, which can take hours. Do everything that does not depend on the answer first.",
     allow:
@@ -41,6 +59,7 @@ export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: 
     "Everything a person says here reaches you labelled with who wrote it. More than one of them can be in the same thread, so read the label before you attribute anything, and quote the right person.",
     ...(mention === undefined ? [] : threadContext(mention)),
     waiting[approval],
+    ...(record === undefined ? [] : [forkNote(record)]),
     ...(extra === undefined || extra.trim() === "" ? [] : [extra.trim()]),
   ].join("\n\n");
 }
@@ -95,13 +114,26 @@ function said(mention: Mention, body: string): string {
   return `${speaker(mention)} said${how}:\n${orPlaceholder(body)}`;
 }
 
+/** Names the thread a message opens, as its own first line. */
+function heading(mention: Mention): string {
+  return mention.title === ""
+    ? `[${mention.conversationKey}]`
+    : `[${mention.conversationKey}] ${mention.title}`;
+}
+
 /** The message that opens a session. Its first line becomes the session's name. */
 export function firstMessage(mention: Mention, body: string): string {
-  const heading =
-    mention.title === ""
-      ? `[${mention.conversationKey}]`
-      : `[${mention.conversationKey}] ${mention.title}`;
-  return `${heading}\n\n${FRAMING}\n\n${said(mention, body)}`;
+  return `${heading(mention)}\n\n${FRAMING}\n\n${said(mention, body)}`;
+}
+
+/**
+ * The message that opens a session forked from the one that did the work this
+ * thread is about. What that thread said is already above it, which is the whole
+ * point and also the danger: without this the agent reads the thread it is now in
+ * as the one it was in, and answers people who cannot see what it is answering.
+ */
+export function carriedOverMessage(mention: Mention, body: string, cameFrom: string): string {
+  return `${heading(mention)}\n\nThis is a new thread, and it is not the one everything above came from. That was the thread this work started in, and it is here because ${cameFrom} came out of it. Answer in this thread from now on: nobody reading here saw the other one, so take nothing said there as already said, and point at it only when you mean to send somebody there.\n\n${said(mention, body)}`;
 }
 
 /** The message for every later mention in a conversation the agent already has context for. */

@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import { ConfigError, DEFAULT_CONFIG_FILE } from "./config-file.ts";
 import { createConversation } from "./conversation.ts";
+import { createForkStore } from "./fork-store.ts";
 import { createLiveRegistry, startPublishing } from "./live.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import { readMentions } from "./mention.ts";
@@ -61,8 +62,13 @@ Options:
   --ask-timeout <seconds>   Refuse a waiting request if nobody answers in this
                             long (default 0, which waits forever)
   --state-file <path>       Where conversation-to-session ids are remembered
-                            (default ${defaultStateFile()})
-  --no-state                Remember nothing, so every process starts a new session
+                            (default ${defaultStateFile()}).
+                            A thread records the pull requests it opens in a
+                            forks directory beside it, and a thread that arrives
+                            on one of those starts as a fork of the session that
+                            opened it
+  --no-state                Remember nothing, so every process starts a new
+                            session and no thread forks another
   --web-port <port>         Serve a list of every conversation running on this
                             machine, to this machine and the network it is on
                             (default ${DEFAULT_WEB_PORT}; 0 serves nothing)
@@ -151,8 +157,9 @@ async function main(): Promise<void> {
 
   const rules = await loadRules(options.patternsFile, log);
   const store = createSessionStore(options.stateFile, options.cwd, log);
+  const forks = createForkStore(options.forkFile, log);
   const reply = createReply(log);
-  const conversation = createConversation({ options, rules, store, reply, log });
+  const conversation = createConversation({ options, rules, store, forks, reply, log });
 
   let closeView = async () => {};
   if (options.webPort !== 0) {
@@ -177,6 +184,7 @@ async function main(): Promise<void> {
     permissionMode: options.permissionMode ?? "the default",
     progress: options.progress,
     stateFile: options.stateFile ?? "off",
+    forkFile: forks.path ?? "off",
     patterns: options.patternsFile ?? "built in",
     webPort: options.webPort === 0 ? "off" : options.webPort,
   });

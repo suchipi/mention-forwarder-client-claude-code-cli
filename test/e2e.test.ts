@@ -14,6 +14,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -41,7 +42,7 @@ after(() => {
 });
 
 type Session = {
-  send(prompt: string, id?: string): string;
+  send(prompt: string, id?: string, url?: string): string;
   waitFor(replyFile: string, contains?: string): Promise<string>;
   end(): Promise<{ code: number | null; log: string }>;
 };
@@ -99,7 +100,7 @@ function start({
 
   let seq = 0;
   return {
-    send(prompt, id) {
+    send(prompt, id, url) {
       seq += 1;
       const replyFile = join(dir, `reply-${id ?? seq}.md`);
       child.stdin?.write(
@@ -109,7 +110,7 @@ function start({
           replyFile,
           platform: "github",
           kind: "issue_comment",
-          url: `https://example.com/issues/1#c${seq}`,
+          url: url ?? `https://example.com/issues/1#c${seq}`,
           text: `@bot ${prompt}`,
           prompt,
           author: "suchipi",
@@ -607,6 +608,188 @@ describe("driving the claude CLI", () => {
       argv.includes(`--resume=${entry.sessionId}`),
       `expected a resume flag in ${JSON.stringify(argv)}`,
     );
+  });
+
+  it("starts a thread that came out of another one as a fork of its session", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const forkFile = join(dir, "forks", "forks.jsonl");
+    const argvFile = join(dir, "argv.json");
+    const transcript = join(dir, "transcript.txt");
+
+    const slack = start({
+      dir,
+      conversationKey: "slack:T0:C0:1.1",
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+    });
+    await slack.waitFor(slack.send("fix the flaky test", "a"));
+    await slack.end();
+
+    // The agent's half of this: it is asked for the line, and given a directory
+    // it may write in so that writing it is not a permission request.
+    const asked = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    const prompt = asked[asked.indexOf("--append-system-prompt") + 1] ?? "";
+    ok(prompt.includes(`append one line to ${forkFile}`), prompt);
+    ok(prompt.includes('"from": "slack:T0:C0:1.1"'), prompt);
+    strictEqual(asked[asked.indexOf("--add-dir") + 1], dirname(forkFile));
+
+    // Written here by hand, because the agent is what writes it in a real run.
+    writeFileSync(
+      forkFile,
+      `${JSON.stringify({ url: "https://github.com/acme/widgets/pull/12", from: "slack:T0:C0:1.1" })}\n`,
+    );
+
+    const github = start({
+      dir,
+      conversationKey: "github:acme/widgets#12",
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile, CLAUDE_STUB_TRANSCRIPT: transcript },
+    });
+    await github.waitFor(
+      github.send(
+        "what did you change here?",
+        "b",
+        "https://github.com/acme/widgets/pull/12#issuecomment-9",
+      ),
+    );
+    await github.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(
+      argv.includes("--resume=11111111-2222-3333-4444-555555555555"),
+      `expected the other thread's session in ${JSON.stringify(argv)}`,
+    );
+    ok(argv.includes("--fork-session"), `expected a fork in ${JSON.stringify(argv)}`);
+
+    // Everything above this message happened in the other thread, so the message
+    // says which thread this is instead of carrying on as though it were that one.
+    const told = readFileSync(transcript, "utf8");
+    match(told, /^\[github:acme\/widgets#12\] A test issue\n/);
+    match(told, /This is a new thread/);
+    match(told, /https:\/\/github\.com\/acme\/widgets\/pull\/12 came out of it/);
+
+    // A session each: the fork was filed under the thread that forked it, and the
+    // thread it came out of still has the session it had.
+    const remembered = JSON.parse(readFileSync(stateFile, "utf8")) as {
+      conversations: Record<string, { sessionId: string }>;
+    };
+    strictEqual(
+      remembered.conversations["slack:T0:C0:1.1"]?.sessionId,
+      "11111111-2222-3333-4444-555555555555",
+    );
+    strictEqual(
+      remembered.conversations["github:acme/widgets#12"]?.sessionId,
+      "99999999-8888-7777-6666-555555555555",
+    );
+  });
+
+  it("gives a forked thread the model and effort of the thread it came from", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const forkFile = join(dir, "forks", "forks.jsonl");
+    const argvFile = join(dir, "argv.json");
+
+    const slack = start({
+      dir,
+      conversationKey: "slack:T0:C0:2.2",
+      args: ["--state-file", stateFile],
+    });
+    await slack.waitFor(slack.send("[model=opus, effort=max] fix the flaky test", "a"));
+    await slack.end();
+
+    writeFileSync(
+      forkFile,
+      `${JSON.stringify({ url: "https://github.com/acme/widgets/pull/13", from: "slack:T0:C0:2.2" })}\n`,
+    );
+
+    // Started with neither of its own, so whatever is in its argv came across
+    // with the history: the pull request is answered by what did the work.
+    const github = start({
+      dir,
+      conversationKey: "github:acme/widgets#13",
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+    });
+    await github.waitFor(
+      github.send(
+        "what did you change here?",
+        "b",
+        "https://github.com/acme/widgets/pull/13#issuecomment-1",
+      ),
+    );
+    await github.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    strictEqual(argv[argv.indexOf("--model") + 1], "opus", JSON.stringify(argv));
+    strictEqual(argv[argv.indexOf("--effort") + 1], "max", JSON.stringify(argv));
+
+    // Kept under the forked thread's own key, so the process after this starts on them too.
+    const remembered = JSON.parse(readFileSync(stateFile, "utf8")) as {
+      conversations: Record<string, { model?: string; effort?: string }>;
+    };
+    strictEqual(remembered.conversations["github:acme/widgets#13"]?.model, "opus");
+    strictEqual(remembered.conversations["github:acme/widgets#13"]?.effort, "max");
+  });
+
+  it("keeps a setting the forked thread had already made its own", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const forkFile = join(dir, "forks", "forks.jsonl");
+    const argvFile = join(dir, "argv.json");
+
+    const slack = start({
+      dir,
+      conversationKey: "slack:T0:C0:3.3",
+      args: ["--state-file", stateFile],
+    });
+    await slack.waitFor(slack.send("[model=opus, effort=max] fix the flaky test", "a"));
+    await slack.end();
+
+    writeFileSync(
+      forkFile,
+      `${JSON.stringify({ url: "https://github.com/acme/widgets/pull/14", from: "slack:T0:C0:3.3" })}\n`,
+    );
+
+    // A group on its own settles this thread's effort and runs nothing at all.
+    const settling = start({
+      dir,
+      conversationKey: "github:acme/widgets#14",
+      args: ["--state-file", stateFile],
+    });
+    await settling.waitFor(
+      settling.send("[effort=low]", "b", "https://github.com/acme/widgets/pull/14#issuecomment-1"),
+      "effort `low`",
+    );
+    await settling.end();
+
+    // The session it borrowed to fork from is not written down as its own: read
+    // back, it would be resumed rather than forked, and two threads would share it.
+    const between = JSON.parse(readFileSync(stateFile, "utf8")) as {
+      conversations: Record<string, { sessionId?: string; effort?: string }>;
+    };
+    strictEqual(between.conversations["github:acme/widgets#14"]?.sessionId, undefined);
+    strictEqual(between.conversations["github:acme/widgets#14"]?.effort, "low");
+
+    const github = start({
+      dir,
+      conversationKey: "github:acme/widgets#14",
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+    });
+    await github.waitFor(
+      github.send(
+        "what did you change here?",
+        "c",
+        "https://github.com/acme/widgets/pull/14#issuecomment-2",
+      ),
+    );
+    await github.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(argv.includes("--fork-session"), `expected a fork in ${JSON.stringify(argv)}`);
+    strictEqual(argv[argv.indexOf("--model") + 1], "opus", JSON.stringify(argv));
+    strictEqual(argv[argv.indexOf("--effort") + 1], "low", JSON.stringify(argv));
   });
 
   it("remembers a setting from a group that ran no turn", async () => {

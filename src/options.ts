@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { type ConfigFile, ConfigError, readConfigFile } from "./config-file.ts";
 import { EFFORT_LEVELS } from "./directive.ts";
 import type { Level } from "./logger.ts";
@@ -28,6 +28,12 @@ export type Options = {
   askTimeoutMs: number;
   /** Where conversation-to-session ids are remembered, or undefined to remember nothing. */
   stateFile: string | undefined;
+  /**
+   * Where a session records what it opened, so that the thread which comes of it
+   * forks that session. Derived from the state file rather than set on its own,
+   * because a fork resumes a session id kept there: no state, nothing to fork.
+   */
+  forkFile: string | undefined;
   /** Port the list of running conversations is served on, to local addresses only. `0` serves nothing. */
   webPort: number;
   patternsFile: string | undefined;
@@ -78,6 +84,15 @@ function stateHome(): string {
 
 export function defaultStateFile(): string {
   return join(stateHome(), "sessions.json");
+}
+
+/**
+ * The fork file gets a directory of its own beside the state file, because that
+ * directory is handed to the agent as one it may write in: the rest of the state,
+ * other threads' session ids included, stays out of its way.
+ */
+export function forkFileFor(stateFile: string): string {
+  return resolve(join(dirname(stateFile), "forks", "forks.jsonl"));
 }
 
 /**
@@ -145,6 +160,7 @@ export function resolveOptions(flags: Flags): Options {
     progress: pick("--progress", flags.progress ?? config.progress ?? "all", PROGRESS_MODES) as Progress,
     askTimeoutMs: chooseAskTimeout(flags, config),
     stateFile: flags["no-state"] === true ? undefined : stateFile,
+    forkFile: flags["no-state"] === true ? undefined : forkFileFor(stateFile),
     webPort: chooseWebPort(flags, config),
     patternsFile: patternsFile === undefined ? undefined : resolve(patternsFile),
     recordPath: recordPath === undefined ? undefined : resolve(recordPath),

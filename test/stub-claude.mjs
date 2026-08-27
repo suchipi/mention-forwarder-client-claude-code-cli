@@ -15,10 +15,15 @@ if (argvFile !== undefined)
 const resumed = process.argv
   .slice(2)
   .find((arg) => arg.startsWith("--resume="));
+// What the real CLI does with --fork-session: the history it resumed is carried
+// on under an id of its own, leaving the session it came from where it was.
+const forked = process.argv.slice(2).includes("--fork-session");
 const sessionId =
   resumed === undefined
     ? "11111111-2222-3333-4444-555555555555"
-    : resumed.slice("--resume=".length);
+    : forked
+      ? "99999999-8888-7777-6666-555555555555"
+      : resumed.slice("--resume=".length);
 
 if (scenario === "crash") process.exit(3);
 

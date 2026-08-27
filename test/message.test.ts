@@ -153,6 +153,39 @@ describe("what the agent is told", () => {
     ok(prompt.endsWith("\n\nWork on a branch of your own."), prompt);
   });
 
+  it("tells the agent to write down a pull request it opens, and what to write", () => {
+    const prompt = say.systemPrompt("ask", mention, "Work on a branch of your own.", {
+      path: "/state/forks/forks.jsonl",
+      from: "slack:T0:C0:1755973451.000100",
+    });
+    match(prompt, /append one line to \/state\/forks\/forks\.jsonl/);
+    match(prompt, /\{"url": "<the pull request's url>", "from": "slack:T0:C0:1755973451\.000100"\}/);
+    match(prompt, /starts as a fork of the session that recorded it/);
+    // The operator still has the last word, however much this adds before it.
+    ok(prompt.endsWith("\n\nWork on a branch of your own."), prompt);
+  });
+
+  it("says nothing about recording anything when there is nowhere to record it", () => {
+    doesNotMatch(say.systemPrompt("ask", mention), /append one line/);
+    doesNotMatch(say.systemPrompt("ask", mention), /pull request/);
+  });
+
+  it("opens a carried-over session by saying which thread it is now in", () => {
+    const opening = say.carriedOverMessage(
+      mention,
+      "please fix the flaky test",
+      "https://github.com/acme/widgets/pull/12",
+    );
+    match(opening, /^\[github:acme\/widgets#7\] Flaky test in CI\n/);
+    match(opening, /This is a new thread, and it is not the one everything above came from\./);
+    match(opening, /https:\/\/github\.com\/acme\/widgets\/pull\/12 came out of it/);
+    match(opening, /nobody reading here saw the other one/);
+    match(opening, /@suchipi said, via github issue_comment \(https:\S+\):\nplease fix the flaky test$/);
+    // The framing belongs to a session that starts empty; this one starts with
+    // the whole of another thread above it, framing included.
+    doesNotMatch(opening, /posted back to that thread as a comment/);
+  });
+
   it("adds nothing when the operator said nothing", () => {
     strictEqual(say.systemPrompt("ask", undefined, "   "), say.systemPrompt("ask"));
     strictEqual(say.systemPrompt("ask", undefined, undefined), say.systemPrompt("ask"));

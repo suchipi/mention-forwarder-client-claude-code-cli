@@ -20,6 +20,11 @@ export type ClaudeOptions = {
   allowedTools: string | undefined;
   disallowedTools: string | undefined;
   addDirs: string[];
+  /**
+   * Whether a resumed session is copied rather than carried on, which is what a
+   * thread does with a session belonging to the thread it came out of.
+   */
+  forkSession: boolean;
   appendSystemPrompt: string | undefined;
   /** Passed through to `claude` untouched, for flags this program has no opinion about. */
   extraArgs: string[];
@@ -93,6 +98,8 @@ function buildArgs(options: ClaudeOptions, sessionId: string | undefined): strin
 
   // `--resume` takes an optional value, so it has to be joined with `=` to bind.
   if (sessionId !== undefined) args.push(`--resume=${sessionId}`);
+  // Only ever alongside a resume: on its own it is a flag about nothing.
+  if (sessionId !== undefined && options.forkSession) args.push("--fork-session");
   if (options.model !== undefined) args.push("--model", options.model);
   if (options.effort !== undefined) args.push("--effort", options.effort);
   if (options.permissionMode !== undefined) args.push("--permission-mode", options.permissionMode);

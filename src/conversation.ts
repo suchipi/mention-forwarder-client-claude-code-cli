@@ -1,13 +1,14 @@
 import { type Claude, createClaude, type PermissionResult } from "./claude.ts";
 import { isApproval } from "./answer.ts";
 import { type Directive, type Parsed, parseDirective } from "./directive.ts";
+import type { ForkRequest, ForkStore } from "./fork-store.ts";
 import type { Logger } from "./logger.ts";
 import * as say from "./message.ts";
 import type { Mention } from "./mention.ts";
 import type { Options } from "./options.ts";
 import type { Rule } from "./patterns.ts";
 import type { Reply } from "./reply.ts";
-import type { SessionStore } from "./session-store.ts";
+import type { Remembered, SessionStore } from "./session-store.ts";
 import type { Signal } from "./signals.ts";
 
 type Ask = Extract<Signal, { kind: "ask" }>;
@@ -85,6 +86,7 @@ export type ConversationDeps = {
   options: Options;
   rules: Rule[];
   store: SessionStore;
+  forks: ForkStore;
   reply: Reply;
   log: Logger;
 };
@@ -113,6 +115,7 @@ export function createConversation({
   options,
   rules,
   store,
+  forks,
   reply,
   log,
 }: ConversationDeps): Conversation {
@@ -133,6 +136,10 @@ export function createConversation({
   let startedAt = 0;
   /** Set when a resumed session failed to open, so the retry does not loop. */
   let resumeFailed = false;
+  /** Set while the session id held here is another thread's, so the next start copies it rather than joining it. */
+  let forkParent = false;
+  /** The work this thread came out of, until the message that says so has been sent. */
+  let carriedFrom: ForkRequest | undefined;
   /** Set once no further mentions can arrive, which is what makes a parked ask unanswerable. */
   let inputEnded = false;
   let settledWaiters: (() => void)[] = [];
@@ -165,7 +172,10 @@ export function createConversation({
     // Written even without a session id: a group on its own settles the thread's
     // settings and then runs nothing, so this is the only chance to keep them.
     store.set(conversationKey, {
-      sessionId,
+      // A session id borrowed for a fork is not this thread's to keep. Kept, the
+      // next process would read it back and resume it rather than fork it, and
+      // both threads would be writing their turns into one history.
+      sessionId: forkParent ? undefined : sessionId,
       cwd: options.cwd,
       model: settings.model,
       effort: settings.effort,
@@ -272,6 +282,10 @@ export function createConversation({
   function onSignal(signal: Signal): void {
     switch (signal.kind) {
       case "session": {
+        // Cleared before anything is written down, and whether or not the id
+        // changed: what the CLI came back with is this thread's own session now,
+        // and starting again would otherwise fork the fork.
+        forkParent = false;
         if (sessionId !== signal.sessionId) {
           sessionId = signal.sessionId;
           remember();
@@ -451,6 +465,10 @@ export function createConversation({
 
     const resume = resumeFailed ? undefined : sessionId;
     startedAt = Date.now();
+    const record =
+      forks.path === undefined
+        ? undefined
+        : { path: forks.path, from: mention.conversationKey };
     const started = createClaude({
       binary: options.binary,
       cwd: options.cwd,
@@ -459,11 +477,18 @@ export function createConversation({
       permissionMode: options.permissionMode,
       allowedTools: options.allowedTools,
       disallowedTools: options.disallowedTools,
-      addDirs: options.addDirs,
+      // The fork file is given to the agent as its own directory to write in, so
+      // recording a pull request is not a permission request posted to a thread.
+      addDirs:
+        forks.directory === undefined
+          ? options.addDirs
+          : [...options.addDirs, forks.directory],
+      forkSession: forkParent,
       appendSystemPrompt: say.systemPrompt(
         options.approval,
         mention,
         options.appendSystemPrompt,
+        record,
       ),
       extraArgs: options.extraArgs,
       rules,
@@ -486,6 +511,10 @@ export function createConversation({
         );
         resumeFailed = true;
         sessionId = undefined;
+        // Whatever this thread was going to carry over is gone with the session
+        // that held it, so what starts instead is a thread of its own.
+        forkParent = false;
+        carriedFrom = undefined;
         if (conversationKey !== undefined) store.forget(conversationKey);
         return ensureRunning(mention);
       }
@@ -616,6 +645,8 @@ export function createConversation({
     // Read after starting: resuming a session that is gone clears it, and the
     // fresh session that replaces it needs the opening framing.
     const opening = sessionId === undefined;
+    const carried = carriedFrom;
+    carriedFrom = undefined;
     turn = {
       mention,
       startedAt: new Date().toISOString(),
@@ -625,13 +656,17 @@ export function createConversation({
       steers: 0,
     };
 
-    const text = opening
-      ? say.firstMessage(mention, body)
-      : say.followUpMessage(mention, body);
+    const text =
+      carried !== undefined
+        ? say.carriedOverMessage(mention, body, carried.url)
+        : opening
+          ? say.firstMessage(mention, body)
+          : say.followUpMessage(mention, body);
     log.info("running a mention", {
       id: mention.id,
       url: mention.url,
       opening,
+      carriedFrom: carried?.from,
       chars: text.length,
     });
     claude?.send(text);
@@ -649,6 +684,49 @@ export function createConversation({
         id: next.id,
         error: error instanceof Error ? error.message : String(error),
       });
+    });
+  }
+
+  /**
+   * A thread whose url an earlier session wrote down — a pull request it opened —
+   * starts as a fork of that session, so that the work behind the pull request is
+   * known here without anybody repeating it.
+   *
+   * Forked rather than resumed, because both threads go on living: two of them
+   * writing into one session would each find the other's turns in their history.
+   */
+  function adoptFork(mention: Mention, own: Remembered | undefined): void {
+    if (mention.url === "") return;
+    const request = forks.parentOf(mention.url);
+    if (request === undefined) return;
+
+    // Read through the session store, so a fork is subject to everything a resume
+    // is: the parent's newest session, and only when it ran in this directory.
+    const parent = store.get(request.from);
+    if (parent?.sessionId === undefined) {
+      log.info("this thread was recorded as another one's work, but that thread has no session here", {
+        from: request.from,
+        url: request.url,
+      });
+      return;
+    }
+
+    sessionId = parent.sessionId;
+    forkParent = true;
+    carriedFrom = request;
+    // The model and the effort come across with the history, so the pull request
+    // is answered by what did the work rather than by whatever the defaults are.
+    // Anything this thread settled for itself first stays settled.
+    settings = {
+      model: own?.model ?? parent.model ?? settings.model,
+      effort: own?.effort ?? parent.effort ?? settings.effort,
+    };
+    log.info("this thread came out of another one; forking its session", {
+      from: request.from,
+      url: request.url,
+      sessionId,
+      model: settings.model,
+      effort: settings.effort,
     });
   }
 
@@ -748,6 +826,7 @@ export function createConversation({
           effort: settings.effort,
         });
       }
+      if (sessionId === undefined) adoptFork(mention, remembered);
 
       // Read before the two branches below, because calling the agent off is the
       // one thing a person needs to be able to say while it is running or waiting.
