@@ -247,7 +247,12 @@ export function askNotice(ask: Ask): string {
               .join("\n\n");
       return `The agent has a question:\n\n${body}\n\nReply here with your answer and it will carry on.`;
     }
-    return `The agent is waiting on \`${ask.tool.name}\` for something only a person can give it. Reply here with your answer.`;
+    // Not every tool that stops for a person lays its ask out the way
+    // `AskUserQuestion` does, so what it was called with is all there is to show.
+    const on = ask.description === undefined ? "" : ` on ${inlineCode(ask.description)}`;
+    const args = describeInput(ask.tool.input);
+    const detail = args === "" ? "" : `\n\n\`${args}\``;
+    return `The agent is waiting on \`${ask.tool.name}\`${on} for something only a person can give it.${detail}\n\nReply here with your answer.`;
   }
 
   const bash = bashPhrasing(ask);

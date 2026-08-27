@@ -90,6 +90,9 @@ function runTurn(text) {
 
   if ((scenario === "ask" || scenario === "question") && turns === 1) {
     const requestId = "ask-1";
+    // The model says what it is about to do before it asks to do it, which is
+    // the context `--progress final` would otherwise keep from the thread.
+    emitText("stub is about to write notes.txt");
     out({
       type: "assistant",
       message: {

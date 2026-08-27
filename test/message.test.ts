@@ -297,6 +297,23 @@ describe("what the thread sees", () => {
     match(notice, /only a person can give it/);
   });
 
+  it("shows what a tool that stops for a person was called with", () => {
+    const notice = say.askNotice(
+      ask({
+        isQuestion: true,
+        description: "a worktree for ENG-1234",
+        tool: {
+          name: "EnterWorktree",
+          toolUseId: "t7",
+          input: { branch: "lily/eng-1234-thing" },
+        },
+      }),
+    );
+    match(notice, /`EnterWorktree` on a worktree for ENG-1234/);
+    match(notice, /lily\/eng-1234-thing/);
+    match(notice, /Reply here with your answer/);
+  });
+
   it("collapses a long argument onto one line", () => {
     const notice = say.askNotice(
       ask({

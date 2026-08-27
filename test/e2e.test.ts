@@ -864,6 +864,29 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("posts a permission request, and what led to it, under --progress final", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      scenario: "ask",
+      args: ["--no-state", "--progress", "final"],
+    });
+
+    const asked = await session.waitFor(
+      session.send("write the file"),
+      "needs permission",
+    );
+    match(asked, /stub is about to write notes\.txt/);
+    match(asked, /`Write`/);
+    match(asked, /Reply `approve`/);
+
+    // The turn's own answer still arrives, and only once: letting the prose out
+    // early must not spend the end-of-turn post that `final` relies on.
+    const answered = await session.waitFor(session.send("approve"));
+    strictEqual(answered.match(/stub wrote the file/g)?.length, 1);
+    await session.end();
+  });
+
   it("records raw events when asked to", async () => {
     const dir = workspace();
     const record = join(dir, "events.jsonl");

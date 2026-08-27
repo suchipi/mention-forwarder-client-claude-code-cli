@@ -145,7 +145,7 @@ It applies to every thread this process handles, and unlike the model, a thread 
 
 ## What gets posted back
 
-Each finished block of prose from the **main agent** is appended to the mention's reply file, so a long run reports as it goes rather than staying silent. mention-forwarder posts each settled batch, so several blocks close together arrive as one comment and blocks further apart arrive as separate ones. Pass `--progress final` to post only the answer, once the turn is done.
+Each finished block of prose from the **main agent** is appended to the mention's reply file, so a long run reports as it goes rather than staying silent. mention-forwarder posts each settled batch, so several blocks close together arrive as one comment and blocks further apart arrive as separate ones. Pass `--progress final` to post only the answer, once the turn is done. A turn that stops for a person is the exception: what it is waiting on goes up the moment it asks, along with whatever the agent said on its way there, because nobody can answer a request they were never shown.
 
 Also posted: anything the turn is waiting on a person for (below), and a line when a turn fails. Nothing else. Thinking, tool calls, tool results, and subagent chatter go to the log, which mention-forwarder prefixes and prints, and never to the thread.
 
@@ -187,6 +187,14 @@ A question:
 > - `Spaces`: Use space characters for indentation
 >
 > Reply here with your answer and it will carry on.
+
+A tool that stops for a person without laying its ask out the way `AskUserQuestion` does — a picker, a confirmation, anything whose own card is the interaction:
+
+> The agent is waiting on `EnterWorktree` on a worktree for ENG-1234 for something only a person can give it.
+>
+> `{"branch":"lily/eng-1234-thing"}`
+>
+> Reply here with your answer.
 
 ### How to answer
 
@@ -478,7 +486,7 @@ A request whose `Host` header is neither a local address nor a name this machine
 | `--disallowed-tools <list>`     |                                                              | Passed to `claude`.                                                                                                                                     |
 | `--add-dir <path>`              |                                                              | Another directory the agent may touch. Repeatable.                                                                                                      |
 | `--claude-arg <arg>`            |                                                              | Passed to `claude` untouched, after everything this program sets. Repeatable. Use `--claude-arg=--flag` when the argument starts with a dash.           |
-| `--progress <mode>`             | `all`                                                        | `all` posts what the agent says as it says it; `final` posts only its answer.                                                                           |
+| `--progress <mode>`             | `all`                                                        | `all` posts what the agent says as it says it; `final` posts only its answer. Either way, a request the turn stops on is posted with what led to it.    |
 | `--ask-timeout <seconds>`       | `0`                                                          | Refuse a waiting request if nobody answers in this long. `0` waits forever.                                                                             |
 | `--state-file <path>`           | `~/.local/state/mention-forwarder-claude-code/sessions.json` | Where conversation-to-session ids are remembered. The `forks` directory beside it is where a thread records the pull requests it opens.                 |
 | `--no-state`                    | off                                                          | Remember nothing, and let no thread fork another.                                                                                                       |

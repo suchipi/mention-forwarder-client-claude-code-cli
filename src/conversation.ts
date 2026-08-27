@@ -21,6 +21,10 @@ type Turn = {
   posted: boolean;
   /** Whether the model's own prose has been posted, which decides the end-of-turn fallback. */
   postedText: boolean;
+  /** Prose `--progress final` is keeping back, until either the turn ends or it stops to ask. */
+  held: string[];
+  /** The last prose an ask let out early, so the end-of-turn fallback does not say it twice. */
+  flushed: string | undefined;
   /** Set when somebody in the thread called this turn off, so its abrupt end is not reported as a failure. */
   interrupted: boolean;
   /** How many mentions reached this turn while it was already running. Logged; nothing branches on it. */
@@ -197,7 +201,24 @@ export function createConversation({
     checkSettled();
   }
 
+  /**
+   * Lets out the prose `--progress final` was keeping back. A turn that stops
+   * for a person has to carry the words that led up to it, or the thread is
+   * asked to approve something nobody there was ever told about.
+   */
+  function releaseHeldProse(): void {
+    if (turn === undefined || turn.held.length === 0) return;
+    const blocks = turn.held;
+    turn.held = [];
+    // Not counted as the turn's prose — its answer is still to come, and the
+    // fallback that posts it reads that flag — but remembered, in case these
+    // turn out to have been its last words after all.
+    turn.flushed = blocks.at(-1)?.trim();
+    for (const block of blocks) post(block);
+  }
+
   function park(ask: Ask): void {
+    releaseHeldProse();
     post(say.askNotice(ask));
     const timer =
       options.askTimeoutMs > 0
@@ -305,6 +326,7 @@ export function createConversation({
         }
         log.info("agent", { text: signal.text });
         if (options.progress === "all") post(signal.text, true);
+        else if (turn !== undefined) turn.held.push(signal.text);
         break;
       }
 
@@ -406,7 +428,11 @@ export function createConversation({
       // result, and the thread should not be told the same thing twice.
       if (!finished.postedText || detail.trim() !== end.text.trim())
         post(say.failureNotice(detail));
-    } else if (!finished.postedText && end.text.trim() !== "") {
+    } else if (
+      !finished.postedText &&
+      end.text.trim() !== "" &&
+      end.text.trim() !== finished.flushed
+    ) {
       // Either --progress final, or the model's words never arrived as their own
       // event. Either way this is the same text, so it cannot double up.
       post(end.text, true);
@@ -541,6 +567,8 @@ export function createConversation({
       startedAt: new Date().toISOString(),
       posted: false,
       postedText: false,
+      held: [],
+      flushed: undefined,
       interrupted: false,
       steers: 0,
     };
@@ -652,6 +680,8 @@ export function createConversation({
       startedAt: new Date().toISOString(),
       posted: false,
       postedText: false,
+      held: [],
+      flushed: undefined,
       interrupted: false,
       steers: 0,
     };
