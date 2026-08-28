@@ -42,7 +42,7 @@ after(() => {
 });
 
 type Session = {
-  send(prompt: string, id?: string, url?: string): string;
+  send(prompt: string, id?: string, url?: string, kind?: string): string;
   waitFor(replyFile: string, contains?: string): Promise<string>;
   end(): Promise<{ code: number | null; log: string }>;
 };
@@ -100,7 +100,7 @@ function start({
 
   let seq = 0;
   return {
-    send(prompt, id, url) {
+    send(prompt, id, url, kind) {
       seq += 1;
       const replyFile = join(dir, `reply-${id ?? seq}.md`);
       child.stdin?.write(
@@ -109,7 +109,7 @@ function start({
           conversationKey,
           replyFile,
           platform: "github",
-          kind: "issue_comment",
+          kind: kind ?? "issue_comment",
           url: url ?? `https://example.com/issues/1#c${seq}`,
           text: `@bot ${prompt}`,
           prompt,
@@ -511,13 +511,26 @@ describe("driving the claude CLI", () => {
       args: ["--no-state"],
     });
 
-    // The stub holds turn 1's answer until it is steered, so nothing here races it.
-    const first = session.send("first");
-    const second = session.send("second");
+    // Two review comments, which GitHub answers in two different review threads:
+    // the case the notice exists for. The stub holds turn 1's answer until it is
+    // steered, so nothing here races it.
+    const first = session.send(
+      "first",
+      "a",
+      "https://example.com/pull/1#discussion_r1",
+      "pull_request_review_comment",
+    );
+    const second = session.send(
+      "second",
+      "b",
+      "https://example.com/pull/1#discussion_r2",
+      "pull_request_review_comment",
+    );
 
     // Told to the comment that steered it, since nothing else says it landed.
     const notice = await session.waitFor(second, "already working");
     match(notice, /at its next step/);
+    match(notice, /discussion_r1/);
 
     // The answer belongs to the comment that started the turn, not the one that
     // steered it: on GitHub those are two different review threads.
@@ -534,13 +547,33 @@ describe("driving the claude CLI", () => {
     // A steer is told it is one, so the agent reads it as a change of course.
     const landed = readFileSync(steers, "utf8");
     match(landed, /while you were still working/);
-    match(landed, /@suchipi said, via github issue_comment \(https:\S+\):\nsecond$/m);
+    match(
+      landed,
+      /@suchipi said, via github pull_request_review_comment \(https:\S+\):\nsecond$/m,
+    );
 
     // Read once the session is over, when nothing further can be written: the
     // steering comment got the notice and never the answer.
     const steererReply = readFileSync(second, "utf8");
     doesNotMatch(steererReply, /stub answered/);
     match(steererReply, /already working/);
+  });
+
+  it("says nothing to a steer already in the thread the answer is coming to", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "steer", args: ["--no-state"] });
+
+    // Issue comments on the one issue, which are answered on that issue, so the
+    // answer to this turn lands where a notice would have pointed anyway.
+    const first = session.send("first");
+    const second = session.send("second");
+
+    // The answer naming what was steered into it is what says the steer landed.
+    match(await session.waitFor(first, "stub answered"), /steered: second/);
+    await session.end();
+
+    const steererReply = existsSync(second) ? readFileSync(second, "utf8") : "";
+    strictEqual(steererReply.trim(), "");
   });
 
   it("queues a mention that changes the model rather than steering with it", async () => {

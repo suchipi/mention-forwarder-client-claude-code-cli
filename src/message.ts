@@ -299,12 +299,55 @@ export function nobodyToAsk(): string {
 }
 
 /**
+ * Whether an answer to this mention is posted to the conversation as a whole
+ * rather than under the comment itself, which is what decides whether two
+ * mentions from one conversation are answered in the same place.
+ *
+ * mention-forwarder answers a Slack mention in the thread the conversation is
+ * keyed on, and a GitHub issue comment, review summary or commit comment on the
+ * issue, pull request or commit. A GitHub review comment, a GitHub discussion
+ * comment and any Linear comment are the exceptions: each is answered under the
+ * comment it hangs off, so two comments in one conversation are answered in two
+ * places. Anything not named here is read as one of those, because a pointer
+ * nobody needed reads better than an answer nobody can find.
+ */
+function answeredToTheConversation(mention: Mention): boolean {
+  if (mention.platform === "slack") return true;
+  return (
+    mention.platform === "github" &&
+    (mention.kind === "issue_comment" ||
+      mention.kind === "pull_request_review" ||
+      mention.kind === "commit_comment")
+  );
+}
+
+/**
+ * Whether an answer to one of these mentions is posted where an answer to the
+ * other would be.
+ */
+function answeredTogether(one: Mention, other: Mention): boolean {
+  return (
+    one.conversationKey === other.conversationKey &&
+    answeredToTheConversation(one) &&
+    answeredToTheConversation(other)
+  );
+}
+
+/**
  * Posted to the comment that reached a turn already running. Nothing comes back
  * from the CLI to say a mid-turn message landed, so without this the thread sees
  * nothing at all until the turn ends. The turn answers where it started, so this
  * is also the only pointer this comment gets to its own answer.
+ *
+ * Nothing at all when that answer is coming to the same thread this would be
+ * posted in, or when there is no permalink to point at: the pointer is the whole
+ * reason to speak, and the answer landing there says everything this would have.
  */
-export function steeredNotice(owner: Mention): string {
+export function steeredNotice(
+  owner: Mention,
+  steerer: Mention,
+): string | undefined {
+  if (owner.url === "" || answeredTogether(owner, steerer)) return undefined;
   return `The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: ${owner.url}`;
 }
 

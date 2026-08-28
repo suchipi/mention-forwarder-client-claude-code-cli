@@ -22,6 +22,10 @@ const mention: Mention = {
   replyFile: "/tmp/reply.md",
 };
 
+function like(over: Partial<Mention>): Mention {
+  return { ...mention, ...over };
+}
+
 function ask(over: Partial<Ask> = {}): Ask {
   return {
     kind: "ask",
@@ -344,13 +348,54 @@ describe("what the thread sees", () => {
     match(notice, /`Bash`/);
   });
 
-  it("tells the thread a mid-turn mention reached the running turn", () => {
-    match(say.steeredNotice(mention), /already working/);
-    match(say.steeredNotice(mention), /at its next step/);
+  it("points a steered comment at the thread the answer will appear in", () => {
+    // Two review comments on one pull request are answered in two different
+    // review threads, so this notice is all the steering one ever sees.
+    const started = like({
+      kind: "pull_request_review_comment",
+      url: "https://github.com/acme/widgets/pull/7#discussion_r100",
+    });
+    const steered = like({
+      kind: "pull_request_review_comment",
+      url: "https://github.com/acme/widgets/pull/7#discussion_r200",
+    });
+
+    const notice = say.steeredNotice(started, steered);
+    ok(notice !== undefined);
+    match(notice, /already working/);
+    match(notice, /at its next step/);
+    ok(notice.includes(started.url));
   });
 
-  it("points a steered comment at the thread the answer will appear in", () => {
-    ok(say.steeredNotice(mention).includes(mention.url));
+  it("points a steered Linear comment at it too, each being answered under itself", () => {
+    const started = like({
+      platform: "linear",
+      kind: "comment",
+      conversationKey: "linear:9f2c1e40",
+      url: "https://linear.app/acme/issue/ENG-1#comment-a",
+    });
+    const steered = { ...started, url: `${started.url}b` };
+
+    ok(say.steeredNotice(started, steered)?.includes(started.url));
+  });
+
+  it("says nothing when the answer is coming to the thread it would be posted in", () => {
+    const issue = say.steeredNotice(mention, like({ url: `${mention.url}1` }));
+    strictEqual(issue, undefined);
+
+    const started = like({
+      platform: "slack",
+      kind: "app_mention",
+      conversationKey: "slack:T0:C0:1787788289.867039",
+      url: "https://acme.slack.com/archives/C0/p1787895504773959",
+    });
+    const steered = { ...started, url: `${started.url}9` };
+    strictEqual(say.steeredNotice(started, steered), undefined);
+  });
+
+  it("points at a mention from another conversation, which is another thread", () => {
+    const steered = like({ conversationKey: "github:acme/widgets#8" });
+    ok(say.steeredNotice(mention, steered) !== undefined);
   });
 
   it("says a stopped turn was stopped, not that it failed", () => {

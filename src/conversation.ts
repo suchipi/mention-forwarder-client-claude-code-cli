@@ -605,7 +605,8 @@ export function createConversation({
    * and folds it in at its next step, which is what makes this possible at all.
    *
    * Nothing comes back from the CLI to say it landed, so the thread is told here,
-   * on the way out, rather than when the agent acts on it.
+   * on the way out, rather than when the agent acts on it — unless the turn's own
+   * answer is coming to that same thread, which says it better than a notice can.
    */
   function steer(mention: Mention, body: string): void {
     const running = turn;
@@ -619,7 +620,8 @@ export function createConversation({
     // Only the acknowledgement belongs to whoever steered. Moving the turn's
     // output here as well would post its answer under an unrelated comment,
     // which on GitHub is a different review thread from the one that asked.
-    reply.append(mention.replyFile, say.steeredNotice(running.mention));
+    const notice = say.steeredNotice(running.mention, mention);
+    if (notice !== undefined) reply.append(mention.replyFile, notice);
     claude?.send(say.steerMessage(mention, body));
   }
 
