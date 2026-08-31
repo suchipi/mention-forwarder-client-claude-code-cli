@@ -145,7 +145,7 @@ It applies to every thread this process handles, and unlike the model, a thread 
 
 ## What gets posted back
 
-Each finished block of prose from the **main agent** is appended to the mention's reply file, so a long run reports as it goes rather than staying silent. mention-forwarder posts each settled batch, so several blocks close together arrive as one comment and blocks further apart arrive as separate ones. Pass `--progress final` to post only the answer, once the turn is done. A turn that stops for a person is the exception: what it is waiting on goes up the moment it asks, along with whatever the agent said on its way there, because nobody can answer a request they were never shown.
+Each finished block of prose from the **main agent** is appended to the mention's reply file, so a long run reports as it goes rather than staying silent. mention-forwarder posts each settled batch, so several blocks close together arrive as one comment and blocks further apart arrive as separate ones. Pass `--progress final` to post only the answer, once the turn is done; [the web view](#everything-a-session-has-done) is where the work in between stays legible. A turn that stops for a person is the exception: what it is waiting on goes up the moment it asks, along with whatever the agent said on its way there, because nobody can answer a request they were never shown.
 
 Also posted: anything the turn is waiting on a person for (below), and a line when a turn fails. Nothing else. Thinking, tool calls, tool results, and subagent chatter go to the log, which mention-forwarder prefixes and prints, and never to the thread.
 
@@ -441,10 +441,32 @@ One row per conversation, showing:
 | The model and effort                      | The thread's own, including whatever a [`[model=...]` group](#choosing-the-model) has changed them to.                                |
 | `3 turns of 5 mentions`, `1 queued`       | What this process has done since it started, and how many mentions are waiting for a turn of their own.                               |
 | The working directory, and the session id | The checkout the agent is working in, and the first characters of the Claude Code session, which is enough to find it under `~/.claude/projects`. |
+| `what it has been doing`                  | A link to [everything that session has done](#everything-a-session-has-done), which is where the work between replies is legible.                 |
 
 mention-forwarder runs one process per conversation, so no single one of them can see the others. Each publishes what it is doing to `~/.local/state/mention-forwarder-claude-code/live/<pid>.json` (or under `XDG_STATE_HOME`), and they all try for the port: whichever gets it serves the list for all of them, and the rest keep trying every ten seconds, so the view survives that process going away. A file left behind by a process that was killed outright is dropped by the next reader.
 
 `http://127.0.0.1:4100/conversations.json` is the same list as JSON, if you would rather watch it from a script.
+
+### Everything a session has done
+
+**A thread is only ever shown what the agent says, and under `--progress final` not even that until the turn is over.** Following `what it has been doing` on a conversation's row opens the whole session instead, in the order it happened: what each mention asked, what the agent answered, every tool it called and with what, what came back, and the errors Claude Code retried past. It keeps up with a running turn, appending as the session is written, and stays at the end as long as you are already there.
+
+What it shows is Claude Code's own transcript, the `~/.claude/projects/<project>/<session id>.jsonl` (or under `CLAUDE_CONFIG_DIR`) that `claude --resume` reads. This only ever reads it.
+
+| Shown                  | Read as                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `From the thread`      | A mention, worded as the agent was given it, which on the first one is [the whole opening message](#what-the-agent-is-told). |
+| `The agent`            | What it said. Under `--progress all` the thread was posted this as it arrived; under `final`, only the last of it.    |
+| `Bash`, `Read`, `Edit` | A tool call, under the tool's own name, with the arguments it was called with.                                        |
+| `↳ Bash`               | What that call came back with, marked `failed` when the tool called it an error.                                      |
+| `subagent`             | Work a `Task` did off to the side of the thread, which reaches the thread only through whatever the agent makes of it. |
+| `Claude Code`          | The CLI itself: a dropped connection it retried past, and anything else it wrote down as an error.                    |
+
+A block over 20,000 characters is cut there and says how much it dropped, so one read of a large file cannot become the whole page, and anything over a screenful is folded until you ask for the rest.
+
+Only a session the list already names can be opened, and only while its conversation still has a process: this view has no password, and a transcript is a great deal more than a title.
+
+`http://127.0.0.1:4100/session.json?id=<session id>` is the same thing as JSON. `&from=<byte offset>` asks only for what the file has gained since that point, which is how the page follows a running turn without re-reading it.
 
 ### Keeping it up between threads
 
@@ -470,7 +492,7 @@ It listens on every interface and decides per request, so this machine's own add
 
 A request whose `Host` header is neither a local address nor a name this machine goes by is refused as well, so a hostname somebody else's DNS points here cannot read it through a browser that can.
 
-**It has no password**, so treat it as readable by anything on the network you are on, and by anyone on this machine: thread titles, working directories, and session ids are in it. Do not put it behind a tunnel or a reverse proxy.
+**It has no password**, so treat it as readable by anything on the network you are on, and by anyone on this machine: thread titles, working directories, session ids, and [everything the running sessions have done](#everything-a-session-has-done), which is every file they read and every command they ran. Do not put it behind a tunnel or a reverse proxy.
 
 `--web-port 0`, or `"webPort": 0`, turns the whole thing off, publishing included. Use it on a network you would not hand this list to.
 
