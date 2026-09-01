@@ -11,7 +11,7 @@ Linear  ──┘           ▲                                      ◀──�
                       └─────────────── reply file ───────────┘
 ```
 
-One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model and reasoning effort, by opening a mention with `[model=opus, effort=max]`, a comment written while the agent is working reaches the turn it is working on, and a turn already running can be called off with `[stop]`.
+One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model and reasoning effort, by opening a mention with `[model=opus, effort=max]`, a comment written while the agent is working reaches the turn it is working on, a turn already running can be called off with `[stop]`, and a thread's history can be thrown away with `[clear]` or summarized in place with `[compact]`.
 
 | mention-forwarder                  | this program                                | Claude Code                            |
 | ---------------------------------- | ------------------------------------------- | -------------------------------------- |
@@ -295,6 +295,7 @@ That line is all the steering comment gets, and it is posted only when there is 
 | While a turn is waiting on a permission request or a question | That comment is [the answer](#how-to-answer) instead. A waiting turn needs answering, and one comment cannot be both. |
 | With `[model=...]` or `[effort=...]`                          | Waits and runs as a turn of its own, because both are start-up flags and take a restart.                              |
 | With `[stop]` or `[exit]`                                     | Stops the turn or ends the process, as it does anywhere else.                                                         |
+| With `[clear]` or `[compact]`                                 | Waits and runs as a turn of its own, because both are about the history this turn is still writing.                   |
 | While the process is starting again after a settings change   | Waits and runs as its own turn, rather than being written to a process that cannot take it.                           |
 
 **A steer is not guaranteed to land before a `[stop]`.** Nothing comes back from Claude Code to say a mid-turn message was taken, so a `[stop]` written moments after one may cancel it along with the turn, without saying which. Stopping sooner matters more than keeping the steer, so that is the trade this makes: if it mattered, say it again once the turn has stopped.
@@ -338,7 +339,7 @@ exit   quit
 @my-bot [exit] now have another go at it
 ```
 
-The process is stopped where it stands, and whatever it was doing goes with it. The session is not lost: the next mention in the thread starts a process again on the same session, so it still has everything said before. Reach for this when the process is wedged, when it is holding onto something you would rather it forgot, or when it was started from a `claude` you have upgraded since. Reach for [`[stop]`](#stopping-a-turn) when it is only the turn you want rid of.
+The process is stopped where it stands, and whatever it was doing goes with it. The session is not lost: the next mention in the thread starts a process again on the same session, so it still has everything said before. Reach for this when the process is wedged, or when it was started from a `claude` you have upgraded since. Reach for [`[stop]`](#stopping-a-turn) when it is only the turn you want rid of, and [`[clear]`](#clearing-the-context) when it is the thread's history: the session outlives this, and everything said in it comes back with the next mention.
 
 |                                                               |                                                                                                                                                                         |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -347,6 +348,60 @@ The process is stopped where it stands, and whatever it was doing goes with it. 
 | While the process is not running                              | Nothing to do, and the bot says so. A thread whose session mention-forwarder has already closed for being idle reads this way.                                          |
 | With an instruction after it                                  | The instruction runs as the next turn, in the process that replaces this one. Anything already waiting for a turn of its own still runs first, in the order it arrived. |
 | With settings after it                                        | `[exit, model=opus] try again` ends the process and applies the settings to the one that replaces it.                                                                   |
+
+## Clearing the context
+
+A thread's history can be thrown away from the thread, with the same bracketed group, using this word:
+
+```
+clear
+```
+
+```
+@my-bot [clear]
+@my-bot [clear] read the pull request again from the top
+```
+
+This is `/clear`. The `claude` process ends and the session is forgotten, so the next mention here opens one of its own that starts out knowing nothing of what was said before it: not this thread's earlier turns, and not [the thread it came out of](#threads-that-come-out-of-other-threads). Anything the agent wrote to disk it wrote to disk; this is the conversation and nothing else. The thread's model and effort are not history and stay as they are.
+
+Reach for this when a thread has gone somewhere you would rather it forgot, or when it has drifted far enough that starting over beats explaining. Reach for [`[compact]`](#compacting-the-context) when the history is worth keeping and only its size is the problem.
+
+|                                                               |                                                                                                                                                                       |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| While a turn is running                                       | It waits for that turn to finish rather than joining it, and takes its place behind anything already waiting for a turn of its own.                                   |
+| While a turn is waiting on a permission request or a question | That comment is [the answer](#how-to-answer) instead. Only `[stop]` and `[exit]` are read while something is waiting.                                                  |
+| While nothing has run in the thread yet                       | Nothing to clear, and the bot says so.                                                                                                                                |
+| With an instruction after it                                  | It runs as the next turn, in the new session, and is what that session opens with.                                                                                    |
+| With settings after it                                        | `[clear, model=opus] start again` applies both, and says both.                                                                                                        |
+| Later, in another process                                     | Still cleared. A thread that threw its history away is recorded as having done so, so the work it came out of is not forked back into the gap the next time it starts. |
+
+## Compacting the context
+
+The same bracketed group, keeping a summary rather than nothing:
+
+```
+compact
+```
+
+```
+@my-bot [compact]
+@my-bot [compact] now go on to the tests
+```
+
+This is `/compact`. Claude Code summarizes the session so far and carries on from that summary, in the same session, so the thread keeps its place and its id. No turn is run, so what the thread gets back is what became of its history:
+
+> Compacted this thread's context: everything said here so far is a summary of itself now, and the thread carries on from that. 29,169 tokens of it became 1,193.
+
+A session that fills up is compacted by Claude Code on its own, without being asked and without the thread hearing about it. This is for doing it deliberately, before a long thread gets there.
+
+|                                                               |                                                                                                                                        |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| While a turn is running                                       | It waits for that turn to finish, as `[clear]` does, so it summarizes the whole of what has been said and not part of it.              |
+| While a turn is waiting on a permission request or a question | That comment is [the answer](#how-to-answer) instead.                                                                                  |
+| While the process is not running                              | It is started on the thread's own session and compacts that, since compacting is something you ask for before the next turn, not after. |
+| While nothing has run in the thread yet                       | Nothing to compact, and the bot says so.                                                                                               |
+| When there is too little of it to be worth summarizing        | Claude Code refuses, and the thread is told what it said: `Not enough messages to compact.`                                            |
+| With an instruction after it                                  | It runs as the next turn, once the compaction has finished, so it runs on what the compaction left.                                    |
 
 ## Settings
 
@@ -421,6 +476,8 @@ It takes both halves. The agent writes the pull request down: its system prompt 
 The next process reads it. A mention whose url is a recorded pull request, or anything under one, starts `claude` with `--resume=<the session of the thread that recorded it> --fork-session`: that history is copied into a session of its own, which is this thread's from then on. The thread it came out of keeps its own session and carries on untouched, which is why this forks rather than resumes — two threads writing into one session would each find the other's turns in their history. The first message of a forked session says so, because everything above it was said somewhere else, to people who cannot see this thread.
 
 A forked thread also starts on the model and the effort the thread it came from was on, so the pull request is answered by whatever did the work rather than by the defaults, and the pair is then remembered under the new thread's own key. Anything the new thread had already settled for itself with a `[model=…]` group stays as it is; only what it had not chosen comes across.
+
+A thread that has [cleared its own history](#clearing-the-context) is never forked into, whichever process it next starts in: having no session is exactly the gap a fork fills, and filling it would hand back the history the thread had just asked to be rid of.
 
 Urls are matched without their fragment, query or case, so a comment permalink (`…/pull/12#issuecomment-9`), a review comment (`…#discussion_r7`) and a file view (`…/pull/12/files`) all name the same pull request. Nothing prunes the file, and a line in it is only ever read for a conversation that has no session of its own yet.
 
@@ -601,6 +658,8 @@ A patterns file needs no build step and no reinstall, so a release that breaks s
 | A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or one of the bare words this program knows, or it was answering a waiting request. See [Choosing the model](#choosing-the-model).                                      |
 | `[stop]` did nothing but post a line saying nothing was running               | The turn had already finished by the time mention-forwarder delivered the comment. See [Stopping a turn](#stopping-a-turn).                                                                                                                              |
 | `[exit]` did nothing but post a line saying nothing was running               | There was no `claude` process to end: mention-forwarder had closed the session for being idle, or it had already gone. The next mention starts one. See [Ending the process](#ending-the-process).                                                       |
+| `[compact]` came back with `Not enough messages to compact`                   | Claude Code will not summarize a session with almost nothing in it. Nothing was lost and the thread carries on as it was. See [Compacting the context](#compacting-the-context).                                                                         |
+| A cleared thread still knows the work behind its pull request                 | Clearing is remembered across processes, so this should not happen. Look for `not forking into a thread that has been cleared` in the log. See [Clearing the context](#clearing-the-context).                                                            |
 
 ## Development
 
@@ -611,18 +670,18 @@ npm run typecheck
 
 `test/stub-claude.mjs` speaks enough of the protocol to script a run, so the whole pipeline is covered without a model or a network. The event shapes in `test/patterns.test.ts` are copied from real `claude` output.
 
-| Path                   | Role                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `src/cli.ts`           | Entry point: options, wiring, the stdin loop, stop signals.                          |
-| `src/options.ts`       | Flags and config file resolved into one checked object.                              |
-| `src/config-file.ts`   | Reading and checking the settings file.                                              |
-| `src/mention.ts`       | The mention shape, and reading them off stdin.                                       |
-| `src/claude.ts`        | The `claude` process: argv, framing, and the control protocol.                       |
-| `src/patterns.ts`      | What each event means. The one place a shape is read.                                |
-| `src/signals.ts`       | The vocabulary the rest of the program thinks in.                                    |
-| `src/conversation.ts`  | One thread: which mention starts a turn, which answers an ask, and what gets posted. |
-| `src/message.ts`       | What the agent is told, and what the thread sees.                                    |
-| `src/directive.ts`     | The `[model=…, effort=…, interrupt, exit]` group at the start of a mention.          |
-| `src/answer.ts`        | Whether a reply means "go ahead".                                                    |
-| `src/reply.ts`         | Appending to the mention's reply file.                                               |
-| `src/session-store.ts` | Remembers which session belongs to which conversation.                               |
+| Path                   | Role                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `src/cli.ts`           | Entry point: options, wiring, the stdin loop, stop signals.                                 |
+| `src/options.ts`       | Flags and config file resolved into one checked object.                                     |
+| `src/config-file.ts`   | Reading and checking the settings file.                                                     |
+| `src/mention.ts`       | The mention shape, and reading them off stdin.                                              |
+| `src/claude.ts`        | The `claude` process: argv, framing, and the control protocol.                              |
+| `src/patterns.ts`      | What each event means. The one place a shape is read.                                       |
+| `src/signals.ts`       | The vocabulary the rest of the program thinks in.                                           |
+| `src/conversation.ts`  | One thread: which mention starts a turn, which answers an ask, and what gets posted.        |
+| `src/message.ts`       | What the agent is told, and what the thread sees.                                           |
+| `src/directive.ts`     | The `[model=…, effort=…, interrupt, exit, clear, compact]` group at the start of a mention. |
+| `src/answer.ts`        | Whether a reply means "go ahead".                                                           |
+| `src/reply.ts`         | Appending to the mention's reply file.                                                      |
+| `src/session-store.ts` | Remembers which session belongs to which conversation.                                      |

@@ -156,6 +156,56 @@ const EVENTS: Record<string, RawEvent> = {
     result: "the model is unavailable",
     type: "result",
   },
+  compacting: {
+    type: "system",
+    subtype: "status",
+    status: "compacting",
+    session_id: "f1e89d14",
+    uuid: "4f694641-36ba-49ce-927d-5dc0753b05cd",
+  },
+  compactionSucceeded: {
+    type: "system",
+    subtype: "status",
+    status: null,
+    compact_result: "success",
+    session_id: "f1e89d14",
+    uuid: "491932cb-d63b-4163-b38a-bf430d95725e",
+  },
+  compactionFailed: {
+    type: "system",
+    subtype: "status",
+    status: null,
+    compact_result: "failed",
+    compact_error: "Not enough messages to compact.",
+    session_id: "f1e89d14",
+    uuid: "5949972b-3e77-4ec4-885a-79ae33cc7113",
+  },
+  compactBoundary: {
+    type: "system",
+    subtype: "compact_boundary",
+    session_id: "f1e89d14",
+    uuid: "99c88dd9-0885-4589-baf5-d92dc7274eaa",
+    compact_metadata: {
+      trigger: "manual",
+      pre_tokens: 29169,
+      post_tokens: 1193,
+      cumulative_dropped_tokens: 27976,
+      duration_ms: 15642,
+    },
+  },
+  // What a `/compact` ends with: the same shape as a prompt the CLI ran for
+  // itself, which is why only the turn it belongs to can tell them apart.
+  resultOfACompaction: {
+    is_error: false,
+    session_id: "f1e89d14",
+    permission_denials: [],
+    subtype: "success",
+    result: "",
+    num_turns: 0,
+    duration_ms: 15655,
+    stop_reason: null,
+    type: "result",
+  },
   rateLimit: {
     type: "rate_limit_event",
     rate_limit_info: { status: "allowed", resetsAt: 1787408400, rateLimitType: "five_hour" },
@@ -186,8 +236,44 @@ describe("recognizing what claude says", () => {
 
   it("keeps init ahead of the catch-all for system events", () => {
     // Ordering is load-bearing: system/other would claim an init too.
-    strictEqual(only({ type: "system", subtype: "compact_boundary" } as RawEvent).kind, "notice");
+    strictEqual(only({ type: "system", subtype: "hook_event" } as RawEvent).kind, "notice");
     strictEqual(only(EVENTS["init"] as RawEvent).kind, "session");
+  });
+
+  it("reads a compaction off the boundary it leaves behind", () => {
+    const compacted = only(EVENTS["compactBoundary"] as RawEvent);
+    strictEqual(compacted.kind, "compacted");
+    if (compacted.kind !== "compacted") return;
+    strictEqual(compacted.ok, true);
+    strictEqual(compacted.preTokens, 29169);
+    strictEqual(compacted.postTokens, 1193);
+  });
+
+  it("reads why a compaction did not happen", () => {
+    const compacted = only(EVENTS["compactionFailed"] as RawEvent);
+    strictEqual(compacted.kind, "compacted");
+    if (compacted.kind !== "compacted") return;
+    strictEqual(compacted.ok, false);
+    strictEqual(compacted.error, "Not enough messages to compact.");
+  });
+
+  it("says nothing twice about a compaction that worked", () => {
+    // Both events arrive; the boundary is the one with the sizes on it.
+    strictEqual(only(EVENTS["compactionSucceeded"] as RawEvent).kind, "ignored");
+  });
+
+  it("leaves a status event that is not about compacting to the catch-all", () => {
+    strictEqual(only(EVENTS["compacting"] as RawEvent).kind, "notice");
+  });
+
+  it("cannot tell the end of a compaction from any other empty one", () => {
+    // Which is why nothing here tries: the turn it belongs to is what knows.
+    const done = only(EVENTS["resultOfACompaction"] as RawEvent);
+    strictEqual(done.kind, "turn-end");
+    if (done.kind !== "turn-end") return;
+    strictEqual(done.ok, true);
+    strictEqual(done.modelTurns, 0);
+    strictEqual(done.text, "");
   });
 
   it("separates the model's prose from its thinking", () => {

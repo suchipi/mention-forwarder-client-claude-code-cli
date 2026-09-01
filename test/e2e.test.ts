@@ -432,6 +432,198 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("clears the thread's history and opens a new session for what follows", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const transcript = join(dir, "transcript.txt");
+    const argvFile = join(dir, "argv.json");
+    const session = start({
+      dir,
+      args: ["--state-file", stateFile],
+      env: {
+        CLAUDE_STUB_TRANSCRIPT: transcript,
+        CLAUDE_STUB_ARGV_FILE: argvFile,
+      },
+    });
+
+    await session.waitFor(session.send("first", "a"));
+    const cleared = session.send("[clear] start again", "b");
+    await session.waitFor(cleared, "Cleared this thread's context");
+    match(await session.waitFor(cleared, "stub answered"), /start again/);
+    await session.end();
+
+    // The process that replaced it opened a session rather than resuming one,
+    // and was told so: this is the framing only a first message carries.
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(
+      !argv.some((arg) => arg.startsWith("--resume=")),
+      `expected no resume in ${JSON.stringify(argv)}`,
+    );
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 2);
+    ok(
+      (turns[1] ?? "").includes("posted back to that thread as a comment"),
+      "the session that replaced the cleared one was not told it was opening one",
+    );
+
+    // Remembered, so a later process does not hand the thread a history back.
+    const remembered = JSON.parse(readFileSync(stateFile, "utf8")) as {
+      conversations: Record<string, { cleared?: boolean }>;
+    };
+    strictEqual(remembered.conversations["test:1"]?.cleared, true);
+  });
+
+  it("says so when a clear finds no history", async () => {
+    const dir = workspace();
+    const session = start({ dir, args: ["--no-state"] });
+
+    match(
+      await session.waitFor(session.send("[clear]"), "no history here to clear"),
+      /nothing has run in this thread yet/,
+    );
+    await session.end();
+  });
+
+  it("does not fork into a thread that has cleared its history", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const forkFile = join(dir, "forks", "forks.jsonl");
+    const argvFile = join(dir, "argv.json");
+
+    const slack = start({
+      dir,
+      conversationKey: "slack:T0:C0:3.3",
+      args: ["--state-file", stateFile],
+    });
+    await slack.waitFor(slack.send("open the pull request", "a"));
+    await slack.end();
+
+    // Written here by hand, because the agent is what writes it in a real run.
+    writeFileSync(
+      forkFile,
+      `${JSON.stringify({ url: "https://github.com/acme/widgets/pull/13", from: "slack:T0:C0:3.3" })}\n`,
+    );
+
+    const github = start({
+      dir,
+      conversationKey: "github:acme/widgets#13",
+      args: ["--state-file", stateFile],
+      env: { CLAUDE_STUB_ARGV_FILE: argvFile },
+    });
+    // Cleared before the fork it had been given was ever opened, which is the
+    // history this thread would have started with.
+    const url = "https://github.com/acme/widgets/pull/13#issuecomment-9";
+    await github.waitFor(github.send("[clear]", "b", url), "Cleared this thread's context");
+    await github.waitFor(github.send("so what is this?", "c", url));
+    const { log } = await github.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(
+      !argv.includes("--fork-session"),
+      `expected no fork into a cleared thread in ${JSON.stringify(argv)}`,
+    );
+    ok(
+      log.includes("not forking into a thread that has been cleared"),
+      "the fork was skipped for some other reason than the clear",
+    );
+  });
+
+  it("compacts the thread's history and says what became of it", async () => {
+    const dir = workspace();
+    const transcript = join(dir, "transcript.txt");
+    const session = start({
+      dir,
+      args: ["--no-state"],
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+    });
+
+    await session.waitFor(session.send("first", "a"));
+    const compacted = session.send("[compact] now the tests", "b");
+    await session.waitFor(compacted, "Compacted this thread's context");
+    match(await session.waitFor(compacted, "29,169 tokens of it became 1,193"), /summary of itself/);
+    match(await session.waitFor(compacted, "stub answered"), /now the tests/);
+    await session.end();
+
+    // Two turns, not three: the compaction itself is not one, and what followed
+    // it ran on the other side of it.
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 2);
+    match(turns[1] ?? "", /now the tests/);
+  });
+
+  it("posts what claude said when it will not compact", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      args: ["--no-state"],
+      env: { CLAUDE_STUB_COMPACT: "fail" },
+    });
+
+    await session.waitFor(session.send("first", "a"));
+    match(
+      await session.waitFor(session.send("[compact]", "b"), "could not compact"),
+      /Not enough messages to compact/,
+    );
+    await session.end();
+  });
+
+  it("keeps a prompt the CLI queued for itself from ending a compaction", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      args: ["--no-state"],
+      env: { CLAUDE_STUB_COMPACT: "queued" },
+    });
+
+    await session.waitFor(session.send("first", "a"));
+    // The CLI answers what it had queued before it gets to the command, and that
+    // answer must not be taken for the compaction's own end: the compaction has
+    // not run yet, and the turn holding its place is what it reports to.
+    const compacted = session.send("[compact] and then this", "b");
+    await session.waitFor(compacted, "stub answered a prompt it had queued");
+    await session.waitFor(compacted, "Compacted this thread's context");
+    match(await session.waitFor(compacted, "stub answered turn"), /and then this/);
+    await session.end();
+  });
+
+  it("says so when a compaction finds no history", async () => {
+    const dir = workspace();
+    const session = start({ dir, args: ["--no-state"] });
+
+    match(
+      await session.waitFor(session.send("[compact]"), "no history here to compact"),
+      /nothing has run in this thread yet/,
+    );
+    await session.end();
+  });
+
+  it("waits for the running turn before compacting what it is still writing", async () => {
+    const dir = workspace();
+    const transcript = join(dir, "transcript.txt");
+    const session = start({
+      dir,
+      scenario: "steer",
+      args: ["--no-state"],
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+    });
+
+    // Never steers, so turn 1 answers on the stub's backstop and this follows it.
+    const first = session.send("first", "a");
+    const compacted = session.send("[compact]", "b");
+    match(await session.waitFor(first, "stub answered"), /turn 1: first/);
+    await session.waitFor(compacted, "Compacted this thread's context");
+    await session.end();
+
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 1);
+  });
+
   it("says so when an interrupt arrives with nothing to stop", async () => {
     const dir = workspace();
     const session = start({ dir, scenario: "plain", args: ["--no-state"] });

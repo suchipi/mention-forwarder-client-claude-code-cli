@@ -139,6 +139,48 @@ function emitQueuedNotification() {
   });
 }
 
+/**
+ * What the real CLI does with a `/compact`: a status while it works and another
+ * saying how it went, a fresh init, the boundary a compacted session picks up
+ * from, and a turn end with nothing in it. The model is never called.
+ */
+function runCompaction() {
+  const failed = process.env.CLAUDE_STUB_COMPACT === "fail";
+  // What the real CLI does when a message reached it while a turn was running:
+  // it answers that as a prompt of its own before it gets to the command.
+  if (process.env.CLAUDE_STUB_COMPACT === "queued") {
+    emitInit();
+    emitText("stub answered a prompt it had queued");
+    emitResult("stub answered a prompt it had queued", { num_turns: 1 });
+  }
+  out({ type: "system", subtype: "status", status: "compacting", session_id: sessionId });
+  out({
+    type: "system",
+    subtype: "status",
+    status: null,
+    session_id: sessionId,
+    compact_result: failed ? "failed" : "success",
+    ...(failed ? { compact_error: "Not enough messages to compact." } : {}),
+  });
+  emitInit();
+  if (failed) emitText("Not enough messages to compact.");
+  else
+    out({
+      type: "system",
+      subtype: "compact_boundary",
+      session_id: sessionId,
+      compact_metadata: { trigger: "manual", pre_tokens: 29169, post_tokens: 1193 },
+    });
+  // A compaction that failed says why on its result as well; one that worked
+  // ends with nothing in it, the same shape as a prompt the CLI ran for itself.
+  emitResult(failed ? "Not enough messages to compact." : "", {
+    num_turns: 0,
+    duration_ms: 12,
+    total_cost_usd: 0,
+    stop_reason: null,
+  });
+}
+
 function runTurn(text) {
   if (process.env.CLAUDE_STUB_QUEUED_NOTIFICATION !== undefined && turns === 0)
     emitQueuedNotification();
@@ -309,6 +351,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         appendFileSync(process.env.CLAUDE_STUB_STEERS, `${text}\n---\n`);
       }
       pendingAnswer?.();
+      return;
+    }
+    // A message that is nothing but a slash command is the command itself, which
+    // is the only way one can be given over this protocol.
+    if (text.trim() === "/compact") {
+      runCompaction();
       return;
     }
     runTurn(text);

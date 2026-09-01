@@ -12,6 +12,7 @@ import type { Remembered, SessionStore } from "./session-store.ts";
 import type { Signal } from "./signals.ts";
 
 type Ask = Extract<Signal, { kind: "ask" }>;
+type Compacted = Extract<Signal, { kind: "compacted" }>;
 
 /** A turn the CLI is running, and where its output goes. */
 type Turn = {
@@ -29,6 +30,10 @@ type Turn = {
   interrupted: boolean;
   /** How many mentions reached this turn while it was already running. Logged; nothing branches on it. */
   steers: number;
+  /** Whether this turn is a `/compact`, which the model never sees and never answers. */
+  compacting: boolean;
+  /** How that compaction went, as the CLI reported it on the way to ending the turn. */
+  compacted: Compacted | undefined;
 };
 
 /** An ask waiting for somebody to answer it in the thread. */
@@ -109,6 +114,10 @@ function afterDirective(mention: Mention, parsed: Parsed): Mention | undefined {
     group.push(`model=${parsed.directive.model}`);
   if (parsed.directive.effort !== undefined)
     group.push(`effort=${parsed.directive.effort}`);
+  // Not spent by the word that ran: `[exit, clear]` ends the process and still
+  // has a history to throw away afterwards.
+  if (parsed.directive.clear === true) group.push("clear");
+  if (parsed.directive.compact === true) group.push("compact");
   const text = (
     group.length === 0 ? parsed.rest : `[${group.join(", ")}] ${parsed.rest}`
   ).trim();
@@ -142,6 +151,8 @@ export function createConversation({
   let resumeFailed = false;
   /** Set while the session id held here is another thread's, so the next start copies it rather than joining it. */
   let forkParent = false;
+  /** Set once this thread has thrown its history away, which is also a refusal of anybody else's. */
+  let cleared = false;
   /** The work this thread came out of, until the message that says so has been sent. */
   let carriedFrom: ForkRequest | undefined;
   /** Set once no further mentions can arrive, which is what makes a parked ask unanswerable. */
@@ -183,6 +194,9 @@ export function createConversation({
       cwd: options.cwd,
       model: settings.model,
       effort: settings.effort,
+      // Left out until it is true, so the file says nothing about the threads
+      // that never cleared, which is nearly all of them.
+      cleared: cleared ? true : undefined,
     });
   }
 
@@ -385,6 +399,18 @@ export function createConversation({
         });
         break;
 
+      case "compacted":
+        log.info(signal.ok ? "the history was compacted" : "the history could not be compacted", {
+          error: signal.error,
+          preTokens: signal.preTokens,
+          postTokens: signal.postTokens,
+        });
+        // One the CLI ran on its own belongs to whatever turn filled the session
+        // up, and that turn has its own answer to give; only one this thread
+        // asked for is what its turn is waiting on.
+        if (turn?.compacting === true) turn.compacted = signal;
+        break;
+
       case "turn-end":
         finishTurn(signal);
         break;
@@ -429,7 +455,20 @@ export function createConversation({
   }
 
   function finishTurn(end: Extract<Signal, { kind: "turn-end" }>): void {
-    if (endedAPromptOfItsOwn(end)) {
+    const ownPrompt = endedAPromptOfItsOwn(end);
+    if (turn?.compacting === true) {
+      // A compaction ends in exactly that shape too, and that end is this
+      // thread's: it asked for the compaction, and the turn holding its place
+      // closes on it. An end with model work in it, arriving before the
+      // compaction has said how it went, is a prompt the CLI had queued for
+      // itself running ahead of the command; the compaction is still to come.
+      if (!ownPrompt && turn.compacted === undefined) {
+        log.debug("ignored a turn end", {
+          why: "the CLI answered a prompt of its own while a compaction was pending",
+        });
+        return;
+      }
+    } else if (ownPrompt) {
       log.debug("ignored a turn end", {
         why: "the CLI ran a prompt of its own",
       });
@@ -450,6 +489,8 @@ export function createConversation({
 
     if (finished.interrupted) {
       post(say.interruptedNotice());
+    } else if (finished.compacting && end.ok) {
+      post(say.compactedNotice(finished.compacted));
     } else if (!end.ok) {
       const detail = end.error ?? "no reason given";
       // The CLI reports some failures as prose from the model as well as on the
@@ -599,6 +640,8 @@ export function createConversation({
       flushed: undefined,
       interrupted: false,
       steers: 0,
+      compacting: false,
+      compacted: undefined,
     };
     post(text);
     turn = undefined;
@@ -651,6 +694,70 @@ export function createConversation({
     const notice = say.steeredNotice(running.mention, mention);
     if (notice !== undefined) reply.append(mention.replyFile, notice);
     claude?.send(say.steerMessage(mention, body));
+  }
+
+  /**
+   * Throws the thread's history away, so the next mention opens a session of its
+   * own with nothing behind it. The process goes with it: which session it is on
+   * is settled when `claude` starts, and the one running is on the session being
+   * forgotten. The thread's model and effort are not history, and stay.
+   */
+  async function forgetHistory(): Promise<void> {
+    await restart();
+    sessionId = undefined;
+    // The id that failed to resume went with the history; the next start is a
+    // new session either way, and nothing is left for that flag to describe.
+    resumeFailed = false;
+    // Whatever this thread came out of is history too, and unwritten history at
+    // that: it would otherwise be carried in by the very next mention.
+    forkParent = false;
+    carriedFrom = undefined;
+    cleared = true;
+    remember();
+  }
+
+  /**
+   * Asks Claude Code to summarize the thread's history in place, and holds the
+   * turn slot until it says how that went, so anything written after the group
+   * runs on what the compaction left rather than beside it.
+   *
+   * Sent as a message because that is how the CLI takes a slash command over
+   * this protocol; there is no control request for one. The process is started
+   * for it when the thread has a session but nothing running, since a compaction
+   * is exactly what somebody asks for before the next turn rather than after it.
+   */
+  async function compactHistory(mention: Mention): Promise<void> {
+    if (claude?.running !== true) {
+      if (sessionId === undefined) {
+        log.info("nothing to compact", { id: mention.id });
+        reportTo(mention, say.nothingToCompact());
+        return;
+      }
+      if (!(await ensureRunning(mention))) {
+        reportTo(
+          mention,
+          say.startupFailureNotice(
+            "it exited before it was ready; its output is in this command's log",
+          ),
+        );
+        return;
+      }
+    }
+
+    turn = {
+      mention,
+      startedAt: new Date().toISOString(),
+      posted: false,
+      postedText: false,
+      held: [],
+      flushed: undefined,
+      interrupted: false,
+      steers: 0,
+      compacting: true,
+      compacted: undefined,
+    };
+    log.info("compacting the thread's history", { id: mention.id, sessionId });
+    claude?.send("/compact");
   }
 
   /**
@@ -714,6 +821,8 @@ export function createConversation({
       flushed: undefined,
       interrupted: false,
       steers: 0,
+      compacting: false,
+      compacted: undefined,
     };
 
     const text =
@@ -757,6 +866,13 @@ export function createConversation({
    */
   function adoptFork(mention: Mention, own: Remembered | undefined): void {
     if (mention.url === "") return;
+    // A thread that threw its own history away is not given somebody else's: a
+    // session with none is exactly the gap a fork fills, and filling it would
+    // undo the clear at the next mention rather than at some later one.
+    if (cleared) {
+      log.info("not forking into a thread that has been cleared", { url: mention.url });
+      return;
+    }
     const request = forks.parentOf(mention.url);
     if (request === undefined) return;
 
@@ -802,6 +918,11 @@ export function createConversation({
       return;
     }
 
+    // Both of these do their work here rather than by running a turn, and both
+    // still answer the thread, so a group carrying one is never the silent kind.
+    const actsOnTheHistory =
+      directive.clear === true || directive.compact === true;
+
     if (directive.model !== undefined || directive.effort !== undefined) {
       settings = {
         model: directive.model ?? settings.model,
@@ -816,11 +937,30 @@ export function createConversation({
         effort: settings.effort,
       });
 
-      if (rest === "") {
+      if (rest === "" || actsOnTheHistory) {
         reportTo(mention, say.directiveNotice(directive, settings));
-        drain();
-        return;
+        if (!actsOnTheHistory) {
+          drain();
+          return;
+        }
       }
+    }
+
+    if (actsOnTheHistory) {
+      if (directive.clear === true) {
+        const hadHistory = sessionId !== undefined || claude !== undefined;
+        await forgetHistory();
+        log.info("cleared the thread's history", { id: mention.id, hadHistory });
+        reportTo(mention, say.clearedNotice(hadHistory));
+      } else {
+        await compactHistory(mention);
+      }
+      // Whatever followed the group runs as a turn of its own, once the history
+      // it is to run on has settled: a compaction is still holding the turn.
+      const next = rest === "" ? undefined : { ...mention, text: rest, prompt: rest };
+      if (next !== undefined) waiting.push(next);
+      drain();
+      return;
     }
 
     await run(mention, rest);
@@ -876,6 +1016,7 @@ export function createConversation({
       const remembered = store.get(mention.conversationKey);
       if (sessionId === undefined && remembered !== undefined) {
         sessionId = remembered.sessionId;
+        cleared ||= remembered.cleared === true;
         settings = {
           model: remembered.model ?? settings.model,
           effort: remembered.effort ?? settings.effort,
@@ -917,12 +1058,15 @@ export function createConversation({
 
       if (turn !== undefined) {
         // Model and effort are start-up flags, so a group carrying one cannot be
-        // folded into a turn already under way; neither can a group this program
-        // could not read, because `start` is what reports the problem.
+        // folded into a turn already under way; neither can a clear or a compact,
+        // which are about a history this turn is still writing; neither can a
+        // group this program could not read, because `start` reports the problem.
         const needsATurnOfItsOwn =
           parsed.problem !== undefined ||
           parsed.directive.model !== undefined ||
-          parsed.directive.effort !== undefined;
+          parsed.directive.effort !== undefined ||
+          parsed.directive.clear === true ||
+          parsed.directive.compact === true;
 
         if (!needsATurnOfItsOwn && claude?.running === true) {
           steer(mention, parsed.rest);

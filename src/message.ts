@@ -161,6 +161,11 @@ function inlineCode(value: string): string {
     : collapsed;
 }
 
+/** Grouped, because a token count is read at a glance or not at all. */
+function tokens(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
 function describeInput(input: Record<string, unknown>): string {
   const keys = Object.keys(input);
   if (keys.length === 0) return "";
@@ -168,6 +173,7 @@ function describeInput(input: Record<string, unknown>): string {
 }
 
 type Ask = Extract<Signal, { kind: "ask" }>;
+type Compacted = Extract<Signal, { kind: "compacted" }>;
 
 function questionsIn(ask: Ask): string[] {
   const raw = ask.tool.input["questions"];
@@ -370,6 +376,37 @@ export function exitedNotice(hadTurn: boolean): string {
 /** Posted when an exit found no process, which an idle session closed by mention-forwarder will do. */
 export function nothingToExit(): string {
   return "Claude Code was not running here, so there was nothing to end. The next mention starts it.";
+}
+
+/** Posted once a thread's history has been thrown away. */
+export function clearedNotice(hadHistory: boolean): string {
+  return hadHistory
+    ? "Cleared this thread's context. The next mention here opens a new Claude Code session, which starts out knowing nothing of what was said before it. Its model and effort are unchanged."
+    : "There was no history here to clear: nothing has run in this thread yet. The next mention opens a session for it.";
+}
+
+/** Posted when a compaction found no history to summarize. */
+export function nothingToCompact(): string {
+  return "There is no history here to compact: nothing has run in this thread yet. The next mention opens a session for it.";
+}
+
+/**
+ * Posted once a compaction this thread asked for has finished, however it went.
+ * A compaction has no model turn of its own, so this is the whole of what the
+ * thread hears about one.
+ */
+export function compactedNotice(outcome: Compacted | undefined): string {
+  if (outcome === undefined) {
+    return "I asked Claude Code to compact this thread's context, and it finished without saying whether it had. Its log has whatever it did say.";
+  }
+  if (!outcome.ok) {
+    return `I could not compact this thread's context: ${inlineCode(outcome.error ?? "no reason given")}`;
+  }
+  const sizes =
+    outcome.preTokens === undefined || outcome.postTokens === undefined
+      ? ""
+      : ` ${tokens(outcome.preTokens)} tokens of it became ${tokens(outcome.postTokens)}.`;
+  return `Compacted this thread's context: everything said here so far is a summary of itself now, and the thread carries on from that.${sizes}`;
 }
 
 export function refusedByPolicy(toolName: string): string {

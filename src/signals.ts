@@ -72,7 +72,20 @@ export type Signal =
       /** Turns the model took. Zero means the CLI never called it. */
       modelTurns: number | undefined;
     }
-  /** Anything worth a log line but not a decision: rate limits, compaction, API retries. */
+  /**
+   * A compaction has finished: the history was summarized in place, or it could
+   * not be. Both the `/compact` this program sends and the one the CLI runs on
+   * its own when a session fills up end here.
+   */
+  | {
+      kind: "compacted";
+      ok: boolean;
+      error: string | undefined;
+      /** What the history measured before and after. Absent when the CLI did not say. */
+      preTokens: number | undefined;
+      postTokens: number | undefined;
+    }
+  /** Anything worth a log line but not a decision: rate limits, status ticks, API retries. */
   | { kind: "notice"; level: "debug" | "info" | "warn"; text: string; fields: Record<string, unknown> }
   /** Recognized, and deliberately of no interest. */
   | { kind: "ignored"; why: string }

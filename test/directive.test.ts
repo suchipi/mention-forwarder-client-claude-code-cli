@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { EXIT_WORDS, INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
+import { CLEAR_WORDS, COMPACT_WORDS, EXIT_WORDS, INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
 import { APPROVALS, isApproval } from "../src/answer.ts";
 
 describe("the [model=..., effort=...] group", () => {
@@ -121,6 +121,58 @@ describe("the [exit] word", () => {
       .map((word) => word.trim())
       .filter((word) => word !== "");
     deepStrictEqual(new Set(documented), EXIT_WORDS);
+  });
+});
+
+describe("the [clear] and [compact] words", () => {
+  it("takes either of them, whatever their case", () => {
+    for (const word of ["clear", "CLEAR", "Clear"]) {
+      deepStrictEqual(parseDirective(`[${word}]`).directive, { clear: true }, word);
+    }
+    for (const word of ["compact", "COMPACT", "Compact"]) {
+      deepStrictEqual(parseDirective(`[${word}]`).directive, { compact: true }, word);
+    }
+  });
+
+  it("hands back whatever followed, so it can settle the history and then use it", () => {
+    const parsed = parseDirective("[compact] now write the release notes");
+    deepStrictEqual(parsed.directive, { compact: true });
+    strictEqual(parsed.rest, "now write the release notes");
+  });
+
+  it("sits alongside the settings and the words that stop things", () => {
+    deepStrictEqual(parseDirective("[clear, model=opus] start over").directive, { model: "opus", clear: true });
+    deepStrictEqual(parseDirective("[exit, clear]").directive, { exit: true, clear: true });
+    deepStrictEqual(parseDirective("[stop, compact]").directive, { interrupt: true, compact: true });
+  });
+
+  it("refuses to do both at once rather than picking one", () => {
+    const parsed = parseDirective("[clear, compact] go");
+    deepStrictEqual(parsed.directive, {});
+    match(parsed.problem ?? "", /clear and to compact at once/);
+  });
+
+  it("leaves a bare word it does not know alone, group and all", () => {
+    for (const body of ["[cleared] go", "[compacting] go", "[clear it] go"]) {
+      deepStrictEqual(parseDirective(body).directive, {}, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("says the same thing in the README as it does here", () => {
+    const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"), "utf8");
+    const documented = (heading: string): Set<string> => {
+      const block = new RegExp(`${heading}[\\s\\S]*?\`\`\`\\n([\\s\\S]*?)\`\`\``).exec(readme)?.[1];
+      if (block === undefined) throw new Error(`the README no longer lists the words under '${heading}'`);
+      return new Set(
+        block
+          .split(/\n|\s{2,}/)
+          .map((word) => word.trim())
+          .filter((word) => word !== ""),
+      );
+    };
+    deepStrictEqual(documented("## Clearing the context"), CLEAR_WORDS);
+    deepStrictEqual(documented("## Compacting the context"), COMPACT_WORDS);
   });
 });
 

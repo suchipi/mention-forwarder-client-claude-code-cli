@@ -14,6 +14,12 @@ export type Remembered = {
   /** The thread's model and effort, as set by a `[model=...]` group. */
   model?: string;
   effort?: string;
+  /**
+   * Set once the thread has thrown its history away, which outlives the process
+   * that did it: a cleared thread has no session for a later one to resume, and
+   * this is what keeps that gap from being filled by the work it came out of.
+   */
+  cleared?: boolean;
 };
 
 type Entry = Remembered & { updatedAt: string };
@@ -96,7 +102,13 @@ export function createSessionStore(path: string | undefined, cwd: string, log: L
         log.info("ignoring a session remembered for another directory", { remembered: entry.cwd, now: cwd });
         return undefined;
       }
-      return { sessionId: entry.sessionId, cwd: entry.cwd, model: entry.model, effort: entry.effort };
+      return {
+        sessionId: entry.sessionId,
+        cwd: entry.cwd,
+        model: entry.model,
+        effort: entry.effort,
+        cleared: entry.cleared,
+      };
     },
 
     set(conversationKey, remembered) {

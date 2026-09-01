@@ -7,6 +7,12 @@ export const INTERRUPT_WORDS: ReadonlySet<string> = new Set(["interrupt", "stop"
 /** The bare words a group may carry to end the thread's `claude` process. */
 export const EXIT_WORDS: ReadonlySet<string> = new Set(["exit", "quit"]);
 
+/** The bare words a group may carry to throw the thread's history away. */
+export const CLEAR_WORDS: ReadonlySet<string> = new Set(["clear"]);
+
+/** The bare words a group may carry to have that history summarized in place instead. */
+export const COMPACT_WORDS: ReadonlySet<string> = new Set(["compact"]);
+
 export type Directive = {
   model?: string;
   effort?: string;
@@ -14,6 +20,10 @@ export type Directive = {
   interrupt?: boolean;
   /** Something to do as well: end the process, and not only the turn. */
   exit?: boolean;
+  /** And another: throw the thread's history away, so the next turn opens a session of its own. */
+  clear?: boolean;
+  /** And another: keep that history as a summary of itself rather than throwing it away. */
+  compact?: boolean;
 };
 
 export type Parsed = {
@@ -28,7 +38,7 @@ export type Parsed = {
 const GROUP = /^\[([^\]\n]*)\]/;
 
 /**
- * Reads a `[model=..., effort=..., interrupt, exit]` group off the front of a mention.
+ * Reads a `[model=..., effort=..., interrupt, exit, clear, compact]` group off the front of a mention.
  *
  * Anything else in brackets is left alone and passed to the agent as written,
  * because a comment may well open with `[WIP]` or `[bug]` and mean nothing by it.
@@ -54,6 +64,8 @@ export function parseDirective(body: string): Parsed {
       const word = part.toLowerCase();
       if (INTERRUPT_WORDS.has(word)) directive.interrupt = true;
       else if (EXIT_WORDS.has(word)) directive.exit = true;
+      else if (CLEAR_WORDS.has(word)) directive.clear = true;
+      else if (COMPACT_WORDS.has(word)) directive.compact = true;
       else return { directive: {}, rest: text };
       continue;
     }
@@ -76,6 +88,14 @@ export function parseDirective(body: string): Parsed {
     };
   }
   if (directive.effort !== undefined) directive.effort = directive.effort.toLowerCase();
+  if (directive.clear === true && directive.compact === true) {
+    return {
+      directive: {},
+      rest,
+      problem:
+        "That group asks me to clear and to compact at once. Clearing throws this thread's history away and compacting keeps a summary of it, so pick one.",
+    };
+  }
 
   return { directive, rest };
 }

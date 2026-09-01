@@ -7,6 +7,7 @@ import type { Mention } from "../src/mention.ts";
 import type { Signal } from "../src/signals.ts";
 
 type Ask = Extract<Signal, { kind: "ask" }>;
+type Compacted = Extract<Signal, { kind: "compacted" }>;
 
 const mention: Mention = {
   id: "a1",
@@ -409,6 +410,35 @@ describe("what the thread sees", () => {
     match(say.exitedNotice(true), /turn it was running went with it/);
     match(say.exitedNotice(true), /keeps its history/);
     match(say.nothingToExit(), /nothing to end/);
+  });
+
+  it("says what a clear left behind", () => {
+    match(say.clearedNotice(true), /Cleared this thread's context/);
+    match(say.clearedNotice(true), /knowing nothing of what was said before it/);
+    match(say.clearedNotice(false), /no history here to clear/);
+  });
+
+  it("says what a compaction did, with the sizes when it has them", () => {
+    const compacted = (extra: Partial<Compacted>): Compacted => ({
+      kind: "compacted",
+      ok: true,
+      error: undefined,
+      preTokens: undefined,
+      postTokens: undefined,
+      ...extra,
+    });
+    match(
+      say.compactedNotice(compacted({ preTokens: 29169, postTokens: 1193 })),
+      /29,169 tokens of it became 1,193\./,
+    );
+    doesNotMatch(say.compactedNotice(compacted({})), /tokens/);
+    match(
+      say.compactedNotice(compacted({ ok: false, error: "Not enough messages to compact." })),
+      /could not compact this thread's context: Not enough messages to compact\./,
+    );
+    // Nothing came back to say either way, which a release that renames those
+    // events would do, and the thread is told that rather than nothing.
+    match(say.compactedNotice(undefined), /without saying whether it had/);
   });
 
   it("confirms a settings change", () => {

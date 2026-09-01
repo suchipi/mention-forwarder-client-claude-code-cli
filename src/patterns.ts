@@ -185,6 +185,49 @@ const thinkingTokens: Rule = {
   },
 };
 
+/**
+ * How a compaction ends. Only a failure is read from here: one that worked says
+ * so again on the boundary event below, which is also where the sizes are.
+ */
+const compactionStatus: Rule = {
+  name: "system/compaction-status",
+  shape: `{"type":"system","subtype":"status","compact_result":"success"|"failed","compact_error":…}`,
+  match(event) {
+    if (event["type"] !== "system" || event["subtype"] !== "status") return null;
+    const outcome = str(event["compact_result"]);
+    if (outcome === undefined) return null;
+    if (outcome === "success") return [{ kind: "ignored", why: "a compaction its boundary event reports" }];
+    return [
+      {
+        kind: "compacted",
+        ok: false,
+        error: str(event["compact_error"]) ?? "no reason given",
+        preTokens: undefined,
+        postTokens: undefined,
+      },
+    ];
+  },
+};
+
+/** Where a compacted session picks up. Emitted whether this program asked for it or the CLI did. */
+const compactBoundary: Rule = {
+  name: "system/compact-boundary",
+  shape: `{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":…,"pre_tokens":…,"post_tokens":…}}`,
+  match(event) {
+    if (event["type"] !== "system" || event["subtype"] !== "compact_boundary") return null;
+    const metadata = record(event["compact_metadata"]);
+    return [
+      {
+        kind: "compacted",
+        ok: true,
+        error: undefined,
+        preTokens: num(metadata["pre_tokens"]),
+        postTokens: num(metadata["post_tokens"]),
+      },
+    ];
+  },
+};
+
 const assistantMessage: Rule = {
   name: "assistant-message",
   shape: `{"type":"assistant","message":{"content":[{"type":"text"|"thinking"|"tool_use",…}]},"parent_tool_use_id":…}`,
@@ -308,7 +351,7 @@ const keepAlive: Rule = {
   },
 };
 
-/** Everything else the CLI files under `system`: compaction, API retries, hook events. */
+/** Everything else the CLI files under `system`: status ticks, API retries, hook events. */
 const otherSystem: Rule = {
   name: "system/other",
   shape: `{"type":"system","subtype":<anything else>}`,
@@ -331,6 +374,8 @@ export const DEFAULT_RULES: readonly Rule[] = [
   init,
   permissionDenied,
   thinkingTokens,
+  compactionStatus,
+  compactBoundary,
   assistantMessage,
   toolResults,
   result,
