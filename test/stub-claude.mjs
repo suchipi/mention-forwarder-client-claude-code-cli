@@ -123,7 +123,25 @@ let steered = [];
 /** How long the `steer` scenario waits to be steered before answering anyway, so a mis-wired test fails rather than hangs. */
 const STEER_BACKSTOP_MS = 2000;
 
+/**
+ * What the real CLI does when it resumes a session that left background work
+ * behind: a task notification of its own goes in front of whatever is sent next,
+ * and is closed without ever reaching the model.
+ */
+function emitQueuedNotification() {
+  out({ type: "system", subtype: "task_notification", session_id: sessionId });
+  emitInit();
+  emitResult("", {
+    num_turns: 0,
+    duration_ms: 45,
+    total_cost_usd: 0,
+    stop_reason: null,
+  });
+}
+
 function runTurn(text) {
+  if (process.env.CLAUDE_STUB_QUEUED_NOTIFICATION !== undefined && turns === 0)
+    emitQueuedNotification();
   turns += 1;
   running = true;
   steered = [];

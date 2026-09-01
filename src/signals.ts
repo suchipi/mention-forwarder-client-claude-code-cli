@@ -69,6 +69,8 @@ export type Signal =
       denials: Denial[];
       costUsd: number | undefined;
       durationMs: number | undefined;
+      /** Turns the model took. Zero means the CLI never called it. */
+      modelTurns: number | undefined;
     }
   /** Anything worth a log line but not a decision: rate limits, compaction, API retries. */
   | { kind: "notice"; level: "debug" | "info" | "warn"; text: string; fields: Record<string, unknown> }

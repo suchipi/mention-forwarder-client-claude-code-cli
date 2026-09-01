@@ -407,7 +407,35 @@ export function createConversation({
     }
   }
 
+  /**
+   * True for a `result` that ends a prompt the CLI queued for itself rather than
+   * one this program sent. Resuming a session that left background work behind
+   * puts a task notification in front of whatever is sent next, and the CLI
+   * closes it without calling the model: no model turn, and nothing to say.
+   * Taken for the turn this program started, it strands that turn, which goes on
+   * to work, to speak and to stop for permission with nowhere to post any of it.
+   * A turn of ours ending this way had nothing to post either, so leaving it open
+   * costs the thread nothing, and its own end still closes it.
+   */
+  function endedAPromptOfItsOwn(
+    end: Extract<Signal, { kind: "turn-end" }>,
+  ): boolean {
+    return (
+      end.ok &&
+      end.modelTurns === 0 &&
+      end.text.trim() === "" &&
+      end.denials.length === 0
+    );
+  }
+
   function finishTurn(end: Extract<Signal, { kind: "turn-end" }>): void {
+    if (endedAPromptOfItsOwn(end)) {
+      log.debug("ignored a turn end", {
+        why: "the CLI ran a prompt of its own",
+      });
+      return;
+    }
+
     const finished = turn;
     if (finished === undefined) {
       log.warn("a turn ended that this program did not start");

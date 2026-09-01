@@ -136,6 +136,18 @@ const EVENTS: Record<string, RawEvent> = {
     result: "I attempted to ask you that question",
     type: "result",
   },
+  resultOfItsOwnPrompt: {
+    is_error: false,
+    session_id: "f1e89d14",
+    permission_denials: [],
+    subtype: "success",
+    result: "",
+    num_turns: 0,
+    duration_ms: 45,
+    total_cost_usd: 0,
+    stop_reason: null,
+    type: "result",
+  },
   resultFailure: {
     is_error: true,
     session_id: "f1e89d14",
@@ -265,7 +277,17 @@ describe("recognizing what claude says", () => {
     strictEqual(done.text, "Hello, let's work.");
     strictEqual(done.costUsd, 0.0211554);
     strictEqual(done.durationMs, 4237);
+    strictEqual(done.modelTurns, 1);
     deepStrictEqual(done.denials, []);
+  });
+
+  it("counts the model turns, which is zero when the CLI never called it", () => {
+    const done = only(EVENTS["resultOfItsOwnPrompt"] as RawEvent);
+    strictEqual(done.kind, "turn-end");
+    if (done.kind !== "turn-end") return;
+    strictEqual(done.ok, true);
+    strictEqual(done.modelTurns, 0);
+    strictEqual(done.text, "");
   });
 
   it("carries the tools a turn was never allowed to run", () => {

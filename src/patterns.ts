@@ -253,7 +253,7 @@ function denialsOf(event: RawEvent): Denial[] {
 
 const result: Rule = {
   name: "result",
-  shape: `{"type":"result","subtype":"success"|"error_…","is_error":…,"result":…,"permission_denials":[…]}`,
+  shape: `{"type":"result","subtype":"success"|"error_…","is_error":…,"result":…,"num_turns":…,"permission_denials":[…]}`,
   match(event) {
     if (event["type"] !== "result") return null;
     const ok = event["subtype"] === "success" && event["is_error"] !== true;
@@ -266,6 +266,7 @@ const result: Rule = {
         denials: denialsOf(event),
         costUsd: num(event["total_cost_usd"]),
         durationMs: num(event["duration_ms"]),
+        modelTurns: num(event["num_turns"]),
       },
     ];
   },

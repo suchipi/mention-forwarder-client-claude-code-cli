@@ -236,6 +236,41 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("answers even when the CLI ran a prompt of its own first", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      env: { CLAUDE_STUB_QUEUED_NOTIFICATION: "1" },
+      args: ["--no-state"],
+    });
+
+    const reply = session.send("please look at the flaky test");
+    match(await session.waitFor(reply), /stub answered turn 1/);
+
+    const { log } = await session.end();
+    match(log, /ignored a turn end/);
+    doesNotMatch(log, /a turn ended that this program did not start/);
+  });
+
+  it("still asks for permission when the CLI ran a prompt of its own first", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      scenario: "ask",
+      env: { CLAUDE_STUB_QUEUED_NOTIFICATION: "1" },
+      args: ["--no-state"],
+    });
+
+    const asked = await session.waitFor(
+      session.send("write the file"),
+      "needs permission",
+    );
+    match(asked, /`Write`/);
+
+    match(await session.waitFor(session.send("approve")), /stub wrote the file/);
+    await session.end();
+  });
+
   it("lets a person approve a tool that wants a card of its own", async () => {
     const dir = workspace();
     const session = start({ dir, scenario: "card", args: ["--no-state"] });
