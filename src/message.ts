@@ -2,6 +2,7 @@ import { APPROVALS } from "./answer.ts";
 import type { Directive } from "./directive.ts";
 import type { Mention } from "./mention.ts";
 import type { ApprovalMode } from "./options.ts";
+import { reviewThreadKey } from "./review-thread.ts";
 import type { Denial, Signal } from "./signals.ts";
 
 /** Long tool arguments are summarized rather than dumped into a public comment. */
@@ -341,13 +342,19 @@ function answeredToTheConversation(mention: Mention): boolean {
 /**
  * Whether an answer to one of these mentions is posted where an answer to the
  * other would be.
+ *
+ * Two comments in one GitHub review thread are the other way this happens, and
+ * it holds whether or not that thread has [forked](../README.md#forking-a-review-thread):
+ * mention-forwarder answers a review comment by replying to it, and GitHub puts
+ * that reply in the thread the comment is in, so both answers land in the thread
+ * both were written in. Only the webhook payload says which thread that is, so a
+ * comment that cannot be placed in one keeps its pointer.
  */
 function answeredTogether(one: Mention, other: Mention): boolean {
-  return (
-    one.conversationKey === other.conversationKey &&
-    answeredToTheConversation(one) &&
-    answeredToTheConversation(other)
-  );
+  if (one.conversationKey !== other.conversationKey) return false;
+  if (answeredToTheConversation(one) && answeredToTheConversation(other)) return true;
+  const thread = reviewThreadKey(one);
+  return thread !== undefined && thread === reviewThreadKey(other);
 }
 
 /**

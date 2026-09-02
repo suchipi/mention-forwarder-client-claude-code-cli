@@ -739,20 +739,22 @@ describe("driving the claude CLI", () => {
       args: ["--no-state"],
     });
 
-    // Two review comments, which GitHub answers in two different review threads:
-    // the case the notice exists for. The stub holds turn 1's answer until it is
-    // steered, so nothing here races it.
+    // Two review comments in two review threads, which GitHub answers in two
+    // places: the case the notice exists for. The stub holds turn 1's answer
+    // until it is steered, so nothing here races it.
     const first = session.send(
       "first",
       "a",
       "https://example.com/pull/1#discussion_r1",
       "pull_request_review_comment",
+      { comment: { id: 1 } },
     );
     const second = session.send(
       "second",
       "b",
       "https://example.com/pull/1#discussion_r2",
       "pull_request_review_comment",
+      { comment: { id: 2 } },
     );
 
     // Told to the comment that steered it, since nothing else says it landed.
@@ -797,6 +799,34 @@ describe("driving the claude CLI", () => {
     const second = session.send("second");
 
     // The answer naming what was steered into it is what says the steer landed.
+    match(await session.waitFor(first, "stub answered"), /steered: second/);
+    await session.end();
+
+    const steererReply = existsSync(second) ? readFileSync(second, "utf8") : "";
+    strictEqual(steererReply.trim(), "");
+  });
+
+  it("says nothing to a steer written in the review thread the answer lands in", async () => {
+    const dir = workspace();
+    const session = start({ dir, scenario: "steer", args: ["--no-state"] });
+
+    // A reply in the thread the turn started in: GitHub answers the comment that
+    // started it by replying in that same thread, which this comment is reading.
+    const first = session.send(
+      "first",
+      "a",
+      "https://example.com/pull/1#discussion_r1",
+      "pull_request_review_comment",
+      { comment: { id: 1 } },
+    );
+    const second = session.send(
+      "second",
+      "b",
+      "https://example.com/pull/1#discussion_r2",
+      "pull_request_review_comment",
+      { comment: { id: 2, in_reply_to_id: 1 } },
+    );
+
     match(await session.waitFor(first, "stub answered"), /steered: second/);
     await session.end();
 

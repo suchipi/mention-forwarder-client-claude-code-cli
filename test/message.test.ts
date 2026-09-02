@@ -27,6 +27,15 @@ function like(over: Partial<Mention>): Mention {
   return { ...mention, ...over };
 }
 
+/** A review comment on the same pull request, as its webhook payload places it. */
+function reviewComment(id: number, root?: number): Mention {
+  return like({
+    kind: "pull_request_review_comment",
+    url: `https://github.com/acme/widgets/pull/7#discussion_r${id}`,
+    raw: { comment: { id, ...(root === undefined ? {} : { in_reply_to_id: root }) } },
+  });
+}
+
 function ask(over: Partial<Ask> = {}): Ask {
   return {
     kind: "ask",
@@ -364,16 +373,10 @@ describe("what the thread sees", () => {
   });
 
   it("points a steered comment at the thread the answer will appear in", () => {
-    // Two review comments on one pull request are answered in two different
-    // review threads, so this notice is all the steering one ever sees.
-    const started = like({
-      kind: "pull_request_review_comment",
-      url: "https://github.com/acme/widgets/pull/7#discussion_r100",
-    });
-    const steered = like({
-      kind: "pull_request_review_comment",
-      url: "https://github.com/acme/widgets/pull/7#discussion_r200",
-    });
+    // Two review comments in different threads on one pull request are answered
+    // in two places, so this notice is all the steering one ever sees.
+    const started = reviewComment(100);
+    const steered = reviewComment(200);
 
     const notice = say.steeredNotice(started, steered);
     ok(notice !== undefined);
@@ -406,6 +409,24 @@ describe("what the thread sees", () => {
     });
     const steered = { ...started, url: `${started.url}9` };
     strictEqual(say.steeredNotice(started, steered), undefined);
+  });
+
+  it("says nothing to a comment steered from the review thread the answer lands in", () => {
+    // mention-forwarder answers a review comment by replying to it, and GitHub
+    // puts that reply in the thread the comment is in, so the steering comment
+    // is already reading where the answer is coming.
+    strictEqual(say.steeredNotice(reviewComment(100), reviewComment(101, 100)), undefined);
+    strictEqual(say.steeredNotice(reviewComment(101, 100), reviewComment(100)), undefined);
+  });
+
+  it("keeps the pointer when it cannot tell which review threads they are in", () => {
+    const placed = reviewComment(100);
+    const unplaceable = like({ kind: "pull_request_review_comment", url: `${placed.url}0` });
+    ok(say.steeredNotice(unplaceable, like({ ...unplaceable, url: `${unplaceable.url}1` })) !== undefined);
+    ok(say.steeredNotice(placed, unplaceable) !== undefined);
+    // An issue comment is answered on the pull request rather than in a thread
+    // on it, so a review comment steering one is still somewhere else.
+    ok(say.steeredNotice(mention, placed) !== undefined);
   });
 
   it("points at a mention from another conversation, which is another thread", () => {
