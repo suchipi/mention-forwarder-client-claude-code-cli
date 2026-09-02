@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { ConfigError, DEFAULT_CONFIG_FILE } from "./config-file.ts";
-import { createConversation } from "./conversation.ts";
 import { createForkStore } from "./fork-store.ts";
 import { createLiveRegistry, startPublishing } from "./live.ts";
 import { createLogger, type Logger } from "./logger.ts";
@@ -10,6 +9,7 @@ import { DEFAULT_WEB_PORT, defaultStateFile, liveDirectory, resolveOptions } fro
 import { loadRules } from "./patterns.ts";
 import { createReply } from "./reply.ts";
 import { createSessionStore } from "./session-store.ts";
+import { createThreads } from "./threads.ts";
 import { startWebView } from "./web.ts";
 
 /** How long a stop signal waits for Claude Code to wind down before the process leaves anyway. */
@@ -31,7 +31,9 @@ Meant to be the "command" of a mention-forwarder configured with
 "lifecycle": "per-conversation".
 
 A mention may open with [model=..., effort=...] to set the model for its thread
-from then on; what follows the group is passed to the agent as usual.
+from then on; what follows the group is passed to the agent as usual. A GitHub
+review comment may open with [fork] to give its review thread a session of its
+own, forked off the pull request's, which then runs beside it.
 
 Options:
   -c, --config <path>       Settings file. Flags win over it. Default, when it
@@ -159,12 +161,12 @@ async function main(): Promise<void> {
   const store = createSessionStore(options.stateFile, options.cwd, log);
   const forks = createForkStore(options.forkFile, log);
   const reply = createReply(log);
-  const conversation = createConversation({ options, rules, store, forks, reply, log });
+  const threads = createThreads({ options, rules, store, forks, reply, log });
 
   let closeView = async () => {};
   if (options.webPort !== 0) {
     const registry = createLiveRegistry(liveDirectory(), log);
-    const publisher = startPublishing(registry, conversation.snapshot);
+    const publisher = startPublishing(registry, threads.snapshots);
     const server = startWebView({ port: options.webPort, registry, log });
     // Covers every way out, including the process.exit below.
     process.on("exit", () => registry.remove());
@@ -195,7 +197,7 @@ async function main(): Promise<void> {
     stopping = true;
     // mention-forwarder kills this process shortly after; leave either way.
     setTimeout(() => process.exit(0), STOP_GRACE_MS).unref();
-    void conversation.stop().finally(() => process.exit(0));
+    void threads.stop().finally(() => process.exit(0));
   };
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -210,7 +212,7 @@ async function main(): Promise<void> {
     // Serialized so two mentions arriving together cannot both decide the
     // conversation is idle and start a turn each.
     queue = queue
-      .then(() => conversation.handle(mention))
+      .then(() => threads.handle(mention))
       .catch((error: unknown) => {
         log.error("could not handle a mention", {
           mention: mention.id,
@@ -223,8 +225,8 @@ async function main(): Promise<void> {
   // stdin closing is how both lifecycles say "that was the last one", so the work
   // already in flight is finished before the process leaves.
   log.info("input closed, finishing what is running");
-  await conversation.finish();
-  await conversation.stop();
+  await threads.finish();
+  await threads.stop();
   await closeView();
   log.info("session over");
 }

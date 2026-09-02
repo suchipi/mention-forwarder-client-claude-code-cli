@@ -192,6 +192,20 @@ describe("what the agent is told", () => {
     doesNotMatch(opening, /posted back to that thread as a comment/);
   });
 
+  it("opens a session split off a pull request by saying which thread it is now in", () => {
+    const comment = like({
+      kind: "pull_request_review_comment",
+      url: "https://github.com/acme/widgets/pull/7#discussion_r200",
+    });
+    const opening = say.splitOffMessage(comment, "have a look", "github:acme/widgets#7#review:200");
+    match(opening, /^\[github:acme\/widgets#7#review:200\] Flaky test in CI\n/);
+    match(opening, /This is one review thread on the pull request everything above was said on/);
+    match(opening, /the rest of the pull request is not reading/);
+    match(opening, /@suchipi said, via github pull_request_review_comment \(https:\S+\):\nhave a look$/);
+    // It opens on a copy of the pull request's session, framing and all.
+    doesNotMatch(opening, /posted back to that thread as a comment/);
+  });
+
   it("adds nothing when the operator said nothing", () => {
     strictEqual(say.systemPrompt("ask", undefined, "   "), say.systemPrompt("ask"));
     strictEqual(say.systemPrompt("ask", undefined, undefined), say.systemPrompt("ask"));
@@ -439,6 +453,21 @@ describe("what the thread sees", () => {
     // Nothing came back to say either way, which a release that renames those
     // events would do, and the thread is told that rather than nothing.
     match(say.compactedNotice(undefined), /without saying whether it had/);
+  });
+
+  it("says what a fork left the new thread knowing, and what it does not", () => {
+    match(say.forkedNotice(), /This review thread has a session of its own from here/);
+    match(say.forkedNotice(), /starts as a copy of the one this pull request is on/);
+    match(say.forkedNotice(), /alongside that thread rather than behind it/);
+    match(say.forkedFromNothingNotice(), /Nothing has run in this pull request's own thread yet/);
+  });
+
+  it("says why it will not fork a thread twice, or a comment that is not in one", () => {
+    match(say.alreadyForkedNotice(), /already has a session of its own/);
+    match(say.nothingToForkHere(), /only means something written in a review comment/);
+    match(say.cannotFollowTheReviewThread(), /cannot tell which review thread this comment is in/);
+    // The one thing somebody can do about it, named where they will read it.
+    match(say.cannotFollowTheReviewThread(), /`includeRawPayload`/);
   });
 
   it("confirms a settings change", () => {

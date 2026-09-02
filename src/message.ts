@@ -37,8 +37,8 @@ function forkNote(record: ForkRecord): string {
  * reason to believe it is talking to someone at a terminal, and the difference
  * decides how it writes and whether it stops to ask.
  *
- * `mention` is the one the session is being started for; a process serves one
- * conversation, so its thread is every later mention's thread too.
+ * `mention` is the one the session is being started for; a session serves one
+ * thread, so its thread is every later mention's thread too.
  *
  * `extra` is whatever the operator put in `appendSystemPrompt`, added last so
  * their standing instructions read as the final word on how the bot behaves.
@@ -116,10 +116,8 @@ function said(mention: Mention, body: string): string {
 }
 
 /** Names the thread a message opens, as its own first line. */
-function heading(mention: Mention): string {
-  return mention.title === ""
-    ? `[${mention.conversationKey}]`
-    : `[${mention.conversationKey}] ${mention.title}`;
+function heading(mention: Mention, key = mention.conversationKey): string {
+  return mention.title === "" ? `[${key}]` : `[${key}] ${mention.title}`;
 }
 
 /** The message that opens a session. Its first line becomes the session's name. */
@@ -135,6 +133,19 @@ export function firstMessage(mention: Mention, body: string): string {
  */
 export function carriedOverMessage(mention: Mention, body: string, cameFrom: string): string {
   return `${heading(mention)}\n\nThis is a new thread, and it is not the one everything above came from. That was the thread this work started in, and it is here because ${cameFrom} came out of it. Answer in this thread from now on: nobody reading here saw the other one, so take nothing said there as already said, and point at it only when you mean to send somebody there.\n\n${said(mention, body)}`;
+}
+
+/**
+ * The message that opens a session split off the one its pull request is on, for
+ * a single review thread on that pull request.
+ *
+ * Everything above it was said on the pull request as a whole, and this thread
+ * is a corner of it: the people reading here see only what is written in this
+ * one thread, and the pull request's own thread carries on beside this session
+ * without anything said here reaching it.
+ */
+export function splitOffMessage(mention: Mention, body: string, key: string): string {
+  return `${heading(mention, key)}\n\nThis is one review thread on the pull request everything above was said on, and it has this session to itself from here. Answer in this thread from now on: what you say goes back as a reply in it, where the rest of the pull request is not reading, and the pull request's own thread has a session of its own that carries on without you. Take nothing said above as said here, and point at it only when you mean to send somebody there.\n\n${said(mention, body)}`;
 }
 
 /** The message for every later mention in a conversation the agent already has context for. */
@@ -376,6 +387,39 @@ export function exitedNotice(hadTurn: boolean): string {
 /** Posted when an exit found no process, which an idle session closed by mention-forwarder will do. */
 export function nothingToExit(): string {
   return "Claude Code was not running here, so there was nothing to end. The next mention starts it.";
+}
+
+/**
+ * Posted to the review comment that asked for a session of its own, once it has
+ * one. It says what the new session knows and what it does not, because from
+ * here the thread is answered by an agent the rest of the pull request cannot
+ * see and which cannot see the rest of the pull request.
+ */
+export function forkedNotice(): string {
+  return "This review thread has a session of its own from here. It starts as a copy of the one this pull request is on, so it knows everything said there so far, and nothing said in it after this reaches the rest of the pull request. It runs alongside that thread rather than behind it, so an answer here no longer waits for whatever else the bot is doing on this pull request.";
+}
+
+/** Posted instead when nothing has ever run in the pull request's own thread, so there was no history to copy. */
+export function forkedFromNothingNotice(): string {
+  return "This review thread has a session of its own from here. Nothing has run in this pull request's own thread yet, so there was nothing to copy into it: it starts knowing only what is written in this thread. It runs alongside the pull request's thread rather than behind it.";
+}
+
+/** Posted when a review thread that already has a session of its own is asked for another. */
+export function alreadyForkedNotice(): string {
+  return "This review thread already has a session of its own, so I cannot fork it again: everything written here since it was forked has gone to that session, and a second one would answer from here knowing only the half it had seen. Say what you want it to do and it carries on from where it is.";
+}
+
+/** Posted when `[fork]` was written somewhere there is no review thread to give a session to. */
+export function nothingToForkHere(): string {
+  return "`[fork]` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was forked, and this comment is answered in the thread as it always was.";
+}
+
+/**
+ * Posted when a review comment cannot be placed in its thread, which is every
+ * one of them unless mention-forwarder is passing the webhook payload on.
+ */
+export function cannotFollowTheReviewThread(): string {
+  return "I cannot tell which review thread this comment is in, so forking it would strand the new session at this one comment: only the webhook payload says which thread a review comment belongs to, and mention-forwarder passes it on only when `includeRawPayload` is on. Turn that on and `[fork]` works here.";
 }
 
 /** Posted once a thread's history has been thrown away. */

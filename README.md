@@ -270,7 +270,7 @@ Some examples:
 
 Both are start-up flags, so changing one restarts the `claude` process on the same session id. The thread keeps its history. It is also why a group carrying one cannot join a turn already running: a mention that changes the model waits for a turn of its own, where a mention without a group would have been [steered into the running turn](#steering-a-running-turn) instead.
 
-One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn) and [`[exit]`](#ending-the-process), which are read wherever they appear.
+One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change the model in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn), [`[exit]`](#ending-the-process) and [`[fork]`](#forking-a-review-thread), which are read wherever they appear.
 
 ## Steering a running turn
 
@@ -296,6 +296,7 @@ That line is all the steering comment gets, and it is posted only when there is 
 | With `[model=...]` or `[effort=...]`                          | Waits and runs as a turn of its own, because both are start-up flags and take a restart.                              |
 | With `[stop]` or `[exit]`                                     | Stops the turn or ends the process, as it does anywhere else.                                                         |
 | With `[clear]` or `[compact]`                                 | Waits and runs as a turn of its own, because both are about the history this turn is still writing.                   |
+| With `[fork]`                                                 | [Forks](#forking-a-review-thread) the review thread it was written in and runs there, leaving this turn to carry on.  |
 | While the process is starting again after a settings change   | Waits and runs as its own turn, rather than being written to a process that cannot take it.                           |
 
 **A steer is not guaranteed to land before a `[stop]`.** Nothing comes back from Claude Code to say a mid-turn message was taken, so a `[stop]` written moments after one may cancel it along with the turn, without saying which. Stopping sooner matters more than keeping the steer, so that is the trade this makes: if it mattered, say it again once the turn has stopped.
@@ -403,6 +404,46 @@ A session that fills up is compacted by Claude Code on its own, without being as
 | When there is too little of it to be worth summarizing        | Claude Code refuses, and the thread is told what it said: `Not enough messages to compact.`                                            |
 | With an instruction after it                                  | It runs as the next turn, once the compaction has finished, so it runs on what the compaction left.                                    |
 
+## Forking a review thread
+
+One GitHub review thread can be taken out of the pull request it is on and given a session of its own, with the same bracketed group, using this word:
+
+```
+fork
+```
+
+```
+@my-bot [fork]
+@my-bot [fork] work out whether this breaks the importer
+```
+
+Every review comment on a pull request reaches the bot as part of that pull request's conversation: one session for all of them, and one turn at a time, however many threads are open on the diff. Written in a review comment, `[fork]` takes the thread it is in out of that. From then on the thread has a session of its own — opened as a copy of the pull request's, so it knows everything said there up to this point — and a `claude` of its own running beside it, so two review threads can be answered at once with neither waiting on the other. Nothing said in the thread from here reaches the pull request's own thread or the other threads on it, and nothing said in those reaches it.
+
+> This review thread has a session of its own from here. It starts as a copy of the one this pull request is on, so it knows everything said there so far, and nothing said in it after this reaches the rest of the pull request. It runs alongside that thread rather than behind it, so an answer here no longer waits for whatever else the bot is doing on this pull request.
+
+Every later mention in that thread runs there, group or no group, and its answers are posted as replies in it, which is where mention-forwarder answers a review comment anyway. This is the same forking as [Threads that come out of other threads](#threads-that-come-out-of-other-threads), asked for from the thread rather than earned by opening a pull request, and it is remembered the same way: the thread keeps its session when the process for it has gone.
+
+|                                                               |                                                                                                                                                                                       |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A thread that has already been forked                         | Nothing to do, and the bot says so. Forking it again would start a second session on a thread whose first is already answering it, knowing only the half it had seen.                 |
+| Anywhere but a review comment                                 | Nothing to fork, and the bot says so. The comment is answered in the thread as it always was.                                                                                         |
+| While a turn is running on the pull request                   | The fork is made and starts its own turn at once. That is the point: the pull request's turn carries on untouched.                                                                     |
+| While a turn is waiting on a permission request or a question | The fork is made, and the request goes on waiting for somebody to answer it. `[fork]` is read while something is waiting, as `[stop]` and `[exit]` are.                                |
+| With an instruction after it                                  | It runs as the new session's first turn, and is what that session opens with.                                                                                                         |
+| With settings after it                                        | `[fork, model=opus] have a look` applies them to the new thread, leaving the pull request's own on whatever it was.                                                                    |
+| Before anything has run on the pull request                   | There is no history to copy, so the thread starts a session of its own knowing only what is written in it, and the bot says so.                                                       |
+| With `[stop]`, `[exit]`, `[clear]` or `[compact]`             | Refused rather than guessed at: forking is about a thread of its own, and those four are about the thread the comment was written in.                                                  |
+
+**Two agents in one working directory.** A forked thread's `claude` runs in the same `cwd` as the thread it came out of, and neither knows the other is there. Where the agent changes files, give it standing instructions to work on a worktree and a branch of its own — see [Telling it something of your own](#telling-it-something-of-your-own) — or the two will be editing one checkout between them.
+
+**It needs the webhook payload.** Which review thread a comment belongs to is the one thing a mention does not otherwise say: a reply's permalink names the reply, not the thread it is in, and only `in_reply_to_id` in GitHub's payload ties the two together. So this needs mention-forwarder's `includeRawPayload`:
+
+```json
+{ "includeRawPayload": true }
+```
+
+Without it a review comment cannot be placed in a thread at all, and `[fork]` says so rather than forking a thread it would then lose track of. Nothing else here reads the payload.
+
 ## Settings
 
 Anything you would otherwise pass as a flag can live in `mention-forwarder-claude-code.config.json`, read from the directory mention-forwarder starts the command in, or from `--config <path>`. Only a file named with `--config` has to exist.
@@ -479,6 +520,8 @@ A forked thread also starts on the model and the effort the thread it came from 
 
 A thread that has [cleared its own history](#clearing-the-context) is never forked into, whichever process it next starts in: having no session is exactly the gap a fork fills, and filling it would hand back the history the thread had just asked to be rid of.
 
+A review thread on a pull request can ask for the same thing from the thread itself, rather than being handed it on the way in: see [Forking a review thread](#forking-a-review-thread). It forks the same way, off the session the pull request is on, and is remembered under a key of its own beneath the pull request's.
+
 Urls are matched without their fragment, query or case, so a comment permalink (`…/pull/12#issuecomment-9`), a review comment (`…#discussion_r7`) and a file view (`…/pull/12/files`) all name the same pull request. Nothing prunes the file, and a line in it is only ever read for a conversation that has no session of its own yet.
 
 Forking goes through the same store as everything else, so the rules above hold: a session remembered for another working directory is not forked, and one that will no longer open leaves the new thread to start on its own instead of failing. `--no-state` turns this off along with the rest.
@@ -487,7 +530,7 @@ Forking goes through the same store as everything else, so the rules above hold:
 
 <http://127.0.0.1:4100> lists every conversation with a process on this machine right now, and links each one back to the thread it came from. It refreshes itself every two seconds, and there is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
 
-One row per conversation, showing:
+One row per conversation — a process that is running a [forked review thread](#forking-a-review-thread) has a row for it as well as for the pull request it came out of — showing:
 
 | Shown                                     | Read as                                                                                                                              |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -658,6 +701,7 @@ A patterns file needs no build step and no reinstall, so a release that breaks s
 | A `[model=…]` group reached the agent as text instead of switching the thread | It was not the first thing in the mention, one of its parts was not `name=value` or one of the bare words this program knows, or it was answering a waiting request. See [Choosing the model](#choosing-the-model).                                      |
 | `[stop]` did nothing but post a line saying nothing was running               | The turn had already finished by the time mention-forwarder delivered the comment. See [Stopping a turn](#stopping-a-turn).                                                                                                                              |
 | `[exit]` did nothing but post a line saying nothing was running               | There was no `claude` process to end: mention-forwarder had closed the session for being idle, or it had already gone. The next mention starts one. See [Ending the process](#ending-the-process).                                                       |
+| `[fork]` says it cannot tell which review thread the comment is in            | mention-forwarder is not passing the webhook payload on, which is the only thing that says. Set `includeRawPayload` in its config. See [Forking a review thread](#forking-a-review-thread).                                                              |
 | `[compact]` came back with `Not enough messages to compact`                   | Claude Code will not summarize a session with almost nothing in it. Nothing was lost and the thread carries on as it was. See [Compacting the context](#compacting-the-context).                                                                         |
 | A cleared thread still knows the work behind its pull request                 | Clearing is remembered across processes, so this should not happen. Look for `not forking into a thread that has been cleared` in the log. See [Clearing the context](#clearing-the-context).                                                            |
 

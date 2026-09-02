@@ -29,6 +29,13 @@ export type Mention = {
   receivedAt: string;
   /** Path to append replies to; mention-forwarder posts what lands there. */
   replyFile: string;
+  /**
+   * The webhook payload the mention was read out of, which mention-forwarder
+   * sends only when its `includeRawPayload` is on. Read for the one thing the
+   * normalized fields cannot say: which review thread a GitHub review comment
+   * belongs to.
+   */
+  raw?: unknown;
 };
 
 /** Past this many buffered bytes, input that never parses is discarded rather than kept forever. */
@@ -63,6 +70,7 @@ export function toMention(value: unknown): Mention {
     author: optionalString(record, "author"),
     title: optionalString(record, "title"),
     receivedAt: optionalString(record, "receivedAt"),
+    ...("raw" in record ? { raw: record["raw"] } : {}),
   };
 }
 

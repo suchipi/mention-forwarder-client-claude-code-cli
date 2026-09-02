@@ -64,7 +64,7 @@ describe("the live conversation registry", () => {
     const dir = directory();
     const registry = createLiveRegistry(dir, quiet);
 
-    registry.publish(snapshot());
+    registry.publish([snapshot()]);
 
     deepStrictEqual(readdirSync(dir), [`${process.pid}.json`]);
     const listed = registry.list();
@@ -75,12 +75,48 @@ describe("the live conversation registry", () => {
     ok(Date.parse(listed[0]?.updatedAt ?? "") > 0, "no updatedAt to spot an abandoned entry by");
   });
 
+  it("writes a row for each conversation the process is running", () => {
+    const dir = directory();
+    const registry = createLiveRegistry(dir, quiet);
+
+    registry.publish([snapshot(), snapshot({ conversationKey: "github:acme/widgets:7#review:100", turns: 3 })]);
+
+    const listed = registry.list();
+    strictEqual(listed.length, 2);
+    deepStrictEqual(
+      listed.map((one) => one.conversationKey),
+      ["github:acme/widgets:7", "github:acme/widgets:7#review:100"],
+    );
+    strictEqual(listed[1]?.pid, process.pid);
+  });
+
+  it("takes away the rows of a process that is publishing fewer than it was", () => {
+    const dir = directory();
+    const registry = createLiveRegistry(dir, quiet);
+
+    registry.publish([snapshot(), snapshot({ conversationKey: "github:acme/widgets:7#review:100" })]);
+    registry.publish([snapshot()]);
+
+    strictEqual(registry.list().length, 1);
+  });
+
+  it("leaves nothing behind when a process running several is removed", () => {
+    const dir = directory();
+    const registry = createLiveRegistry(dir, quiet);
+
+    registry.publish([snapshot(), snapshot({ conversationKey: "github:acme/widgets:7#review:100" })]);
+    registry.remove();
+
+    deepStrictEqual(registry.list(), []);
+    deepStrictEqual(readdirSync(dir), []);
+  });
+
   it("overwrites its own entry rather than adding another", () => {
     const dir = directory();
     const registry = createLiveRegistry(dir, quiet);
 
-    registry.publish(snapshot({ turns: 1 }));
-    registry.publish(snapshot({ turns: 2 }));
+    registry.publish([snapshot({ turns: 1 })]);
+    registry.publish([snapshot({ turns: 2 })]);
 
     strictEqual(registry.list().length, 1);
     strictEqual(registry.list()[0]?.turns, 2);
@@ -90,7 +126,7 @@ describe("the live conversation registry", () => {
     const dir = directory();
     const registry = createLiveRegistry(dir, quiet);
 
-    registry.publish(snapshot());
+    registry.publish([snapshot()]);
     registry.remove();
     registry.remove();
 
@@ -108,7 +144,7 @@ describe("the live conversation registry", () => {
     };
     // Its own pid, since only a live one is listed, under another process's name.
     write(dir, "999999.json", { ...other, pid: process.pid });
-    registry.publish(snapshot());
+    registry.publish([snapshot()]);
 
     const keys = registry.list().map((one) => one.conversationKey);
     deepStrictEqual(keys, ["slack:C1:1", "github:acme/widgets:7"]);
@@ -138,7 +174,7 @@ describe("the live conversation registry", () => {
     const registry = createLiveRegistry(dir, quiet);
     writeFileSync(join(dir, "half-written.json"), "{\"pid\":");
     writeFileSync(join(dir, "notes.txt"), "not mine");
-    registry.publish(snapshot());
+    registry.publish([snapshot()]);
 
     strictEqual(registry.list().length, 1);
     ok(readdirSync(dir).includes("half-written.json"), "a file it could not read was deleted");
@@ -150,7 +186,7 @@ describe("the live conversation registry", () => {
 
   it("writes the entry aside and renames it, so a reader cannot catch it half done", () => {
     const dir = directory();
-    createLiveRegistry(dir, quiet).publish(snapshot());
+    createLiveRegistry(dir, quiet).publish([snapshot()]);
     const raw = readFileSync(join(dir, `${process.pid}.json`), "utf8");
     ok(raw.endsWith("\n"), "the published entry was truncated");
     strictEqual((JSON.parse(raw) as LiveConversation).state, "running");
@@ -162,7 +198,7 @@ describe("publishing what this process is doing", () => {
     const dir = directory();
     const registry = createLiveRegistry(dir, quiet);
     let now = snapshot({ state: "running", turns: 0 });
-    const publisher = startPublishing(registry, () => now);
+    const publisher = startPublishing(registry, () => [now]);
 
     try {
       strictEqual(registry.list()[0]?.turns, 0);

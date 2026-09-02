@@ -13,6 +13,9 @@ export const CLEAR_WORDS: ReadonlySet<string> = new Set(["clear"]);
 /** The bare words a group may carry to have that history summarized in place instead. */
 export const COMPACT_WORDS: ReadonlySet<string> = new Set(["compact"]);
 
+/** The bare words a group may carry to give the GitHub review thread it was written in a session of its own. */
+export const FORK_WORDS: ReadonlySet<string> = new Set(["fork"]);
+
 export type Directive = {
   model?: string;
   effort?: string;
@@ -24,6 +27,8 @@ export type Directive = {
   clear?: boolean;
   /** And another: keep that history as a summary of itself rather than throwing it away. */
   compact?: boolean;
+  /** And another, and the only one about a thread other than the one it was written in. */
+  fork?: boolean;
 };
 
 export type Parsed = {
@@ -38,7 +43,7 @@ export type Parsed = {
 const GROUP = /^\[([^\]\n]*)\]/;
 
 /**
- * Reads a `[model=..., effort=..., interrupt, exit, clear, compact]` group off the front of a mention.
+ * Reads a `[model=..., effort=..., interrupt, exit, clear, compact, fork]` group off the front of a mention.
  *
  * Anything else in brackets is left alone and passed to the agent as written,
  * because a comment may well open with `[WIP]` or `[bug]` and mean nothing by it.
@@ -66,6 +71,7 @@ export function parseDirective(body: string): Parsed {
       else if (EXIT_WORDS.has(word)) directive.exit = true;
       else if (CLEAR_WORDS.has(word)) directive.clear = true;
       else if (COMPACT_WORDS.has(word)) directive.compact = true;
+      else if (FORK_WORDS.has(word)) directive.fork = true;
       else return { directive: {}, rest: text };
       continue;
     }
@@ -88,6 +94,17 @@ export function parseDirective(body: string): Parsed {
     };
   }
   if (directive.effort !== undefined) directive.effort = directive.effort.toLowerCase();
+  if (
+    directive.fork === true &&
+    (directive.interrupt === true || directive.exit === true || directive.clear === true || directive.compact === true)
+  ) {
+    return {
+      directive: {},
+      rest,
+      problem:
+        "That group asks me to fork this review thread and to act on the thread it was written in at the same time. Forking starts a thread of its own, where stopping, exiting, clearing and compacting are all about the one this comment is already in, so write one and then the other.",
+    };
+  }
   if (directive.clear === true && directive.compact === true) {
     return {
       directive: {},

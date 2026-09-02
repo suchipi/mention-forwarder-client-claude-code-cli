@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CLEAR_WORDS, COMPACT_WORDS, EXIT_WORDS, INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
+import { CLEAR_WORDS, COMPACT_WORDS, EXIT_WORDS, FORK_WORDS, INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
 import { APPROVALS, isApproval } from "../src/answer.ts";
 
 describe("the [model=..., effort=...] group", () => {
@@ -173,6 +173,52 @@ describe("the [clear] and [compact] words", () => {
     };
     deepStrictEqual(documented("## Clearing the context"), CLEAR_WORDS);
     deepStrictEqual(documented("## Compacting the context"), COMPACT_WORDS);
+  });
+});
+
+describe("the [fork] word", () => {
+  it("takes the word it documents, whatever its case", () => {
+    for (const word of ["fork", "FORK", "Fork"]) {
+      deepStrictEqual(parseDirective(`[${word}]`).directive, { fork: true }, word);
+    }
+  });
+
+  it("hands back whatever followed it, so the new thread has something to open with", () => {
+    const parsed = parseDirective("[fork] work out whether this breaks the importer");
+    deepStrictEqual(parsed.directive, { fork: true });
+    strictEqual(parsed.rest, "work out whether this breaks the importer");
+  });
+
+  it("sits alongside the settings, which settle the thread it makes", () => {
+    deepStrictEqual(parseDirective("[fork, model=opus] have a look").directive, { model: "opus", fork: true });
+    deepStrictEqual(parseDirective("[effort=max, fork]").directive, { effort: "max", fork: true });
+  });
+
+  it("refuses to fork and act on the thread it was written in at once", () => {
+    for (const body of ["[fork, stop]", "[exit, fork]", "[fork, clear]", "[fork, compact] go"]) {
+      const parsed = parseDirective(body);
+      deepStrictEqual(parsed.directive, {}, body);
+      match(parsed.problem ?? "", /fork this review thread and to act on the thread it was written in/, body);
+    }
+  });
+
+  it("leaves a bare word it does not know alone, group and all", () => {
+    for (const body of ["[forked] go", "[forking] go", "[fork it] go"]) {
+      deepStrictEqual(parseDirective(body).directive, {}, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("says the same thing in the README as it does here", () => {
+    const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"), "utf8");
+    const block = /## Forking a review thread[\s\S]*?```\n([\s\S]*?)```/.exec(readme)?.[1];
+    if (block === undefined) throw new Error("the README no longer lists the fork words under '## Forking a review thread'");
+
+    const documented = block
+      .split(/\n|\s{2,}/)
+      .map((word) => word.trim())
+      .filter((word) => word !== "");
+    deepStrictEqual(new Set(documented), FORK_WORDS);
   });
 });
 

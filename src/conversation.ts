@@ -76,8 +76,25 @@ export type ConversationSnapshot = {
   turns: number;
 };
 
+/** What a thread splitting off another one starts from: the session it is on, and the settings it is on. */
+export type ForkPoint = {
+  sessionId: string | undefined;
+  model: string | undefined;
+  effort: string | undefined;
+};
+
+/** The thread a conversation was split off, and where that thread had got to. */
+export type SplitFrom = { request: ForkRequest; point: ForkPoint };
+
 export type Conversation = {
   handle(mention: Mention): Promise<void>;
+  /**
+   * Where a thread splitting off this one starts. Settles this thread's own
+   * session first: one that has not run in this process yet keeps its session in
+   * the store rather than in hand, and splitting off nothing would hand the new
+   * thread a blank where the work is.
+   */
+  forkPoint(mention: Mention): ForkPoint;
   /** What the process is doing right now. Nothing reads this but the web view. */
   snapshot(): ConversationSnapshot;
   /**
@@ -98,6 +115,20 @@ export type ConversationDeps = {
   forks: ForkStore;
   reply: Reply;
   log: Logger;
+  /**
+   * What this conversation is remembered as, when that is not simply the thread
+   * its mentions arrive under: every review comment on a pull request arrives
+   * under that pull request's key, so a review thread given a session of its own
+   * needs a key of its own to be remembered by.
+   */
+  key?: string;
+  /**
+   * The thread this one was split off, for a conversation made on the spot
+   * rather than found in the store. The store is not asked for the parent here,
+   * because the thread it splits is running in this process and its session is
+   * newer in hand than on disk.
+   */
+  splitFrom?: SplitFrom;
 };
 
 /** How long after a start a non-zero exit is read as "it never got going". */
@@ -108,7 +139,7 @@ const STARTUP_WINDOW_MS = 15000;
  * group carried still runs as a turn of its own. The settings are written back
  * out rather than applied here, because a turn is what applies them.
  */
-function afterDirective(mention: Mention, parsed: Parsed): Mention | undefined {
+export function afterDirective(mention: Mention, parsed: Parsed): Mention | undefined {
   const group: string[] = [];
   if (parsed.directive.model !== undefined)
     group.push(`model=${parsed.directive.model}`);
@@ -131,6 +162,8 @@ export function createConversation({
   forks,
   reply,
   log,
+  key,
+  splitFrom,
 }: ConversationDeps): Conversation {
   let claude: Claude | undefined;
   let sessionId: string | undefined;
@@ -153,8 +186,12 @@ export function createConversation({
   let forkParent = false;
   /** Set once this thread has thrown its history away, which is also a refusal of anybody else's. */
   let cleared = false;
-  /** The work this thread came out of, until the message that says so has been sent. */
-  let carriedFrom: ForkRequest | undefined;
+  /**
+   * The thread whose history this one opens with, until the message that says so
+   * has been sent. `split` tells the two ways that happens apart: a thread that
+   * came out of this work, and a review thread that was cut out of it.
+   */
+  let carriedFrom: { request: ForkRequest; split: boolean } | undefined;
   /** Set once no further mentions can arrive, which is what makes a parked ask unanswerable. */
   let inputEnded = false;
   let settledWaiters: (() => void)[] = [];
@@ -182,11 +219,17 @@ export function createConversation({
     if (isModelProse) turn.postedText = true;
   }
 
+  /** What this conversation is filed under, which is its own key when it was split off another thread. */
+  function ownKey(): string | undefined {
+    return key ?? conversationKey;
+  }
+
   function remember(): void {
-    if (conversationKey === undefined) return;
+    const mine = ownKey();
+    if (mine === undefined) return;
     // Written even without a session id: a group on its own settles the thread's
     // settings and then runs nothing, so this is the only chance to keep them.
-    store.set(conversationKey, {
+    store.set(mine, {
       // A session id borrowed for a fork is not this thread's to keep. Kept, the
       // next process would read it back and resume it rather than fork it, and
       // both threads would be writing their turns into one history.
@@ -563,7 +606,7 @@ export function createConversation({
     const record =
       forks.path === undefined
         ? undefined
-        : { path: forks.path, from: mention.conversationKey };
+        : { path: forks.path, from: ownKey() ?? mention.conversationKey };
     const started = createClaude({
       binary: options.binary,
       cwd: options.cwd,
@@ -610,7 +653,8 @@ export function createConversation({
         // that held it, so what starts instead is a thread of its own.
         forkParent = false;
         carriedFrom = undefined;
-        if (conversationKey !== undefined) store.forget(conversationKey);
+        const mine = ownKey();
+        if (mine !== undefined) store.forget(mine);
         return ensureRunning(mention);
       }
       return false;
@@ -826,16 +870,18 @@ export function createConversation({
     };
 
     const text =
-      carried !== undefined
-        ? say.carriedOverMessage(mention, body, carried.url)
-        : opening
+      carried === undefined
+        ? opening
           ? say.firstMessage(mention, body)
-          : say.followUpMessage(mention, body);
+          : say.followUpMessage(mention, body)
+        : carried.split
+          ? say.splitOffMessage(mention, body, ownKey() ?? mention.conversationKey)
+          : say.carriedOverMessage(mention, body, carried.request.url);
     log.info("running a mention", {
       id: mention.id,
       url: mention.url,
       opening,
-      carriedFrom: carried?.from,
+      carriedFrom: carried?.request.from,
       chars: text.length,
     });
     claude?.send(text);
@@ -857,15 +903,47 @@ export function createConversation({
   }
 
   /**
+   * Takes on the session and the settings of the thread this one came out of.
+   *
+   * The model and the effort come across with the history, so the new thread is
+   * answered by whatever did the work rather than by the defaults. Anything it
+   * had already settled for itself stays settled.
+   */
+  function carryOver(request: ForkRequest, point: ForkPoint, own: Remembered | undefined, split: boolean): void {
+    settings = {
+      model: own?.model ?? point.model ?? settings.model,
+      effort: own?.effort ?? point.effort ?? settings.effort,
+    };
+    if (point.sessionId === undefined) {
+      // Nothing to copy: the thread this splits has not run anywhere yet, so this
+      // one opens as a thread of its own rather than claiming a history it has not got.
+      log.info("the thread this one splits has no session to copy", { from: request.from, url: request.url });
+      return;
+    }
+    sessionId = point.sessionId;
+    forkParent = true;
+    carriedFrom = { request, split };
+    log.info("this thread came out of another one; forking its session", {
+      from: request.from,
+      url: request.url,
+      split,
+      sessionId,
+      model: settings.model,
+      effort: settings.effort,
+    });
+  }
+
+  /**
    * A thread whose url an earlier session wrote down — a pull request it opened —
    * starts as a fork of that session, so that the work behind the pull request is
-   * known here without anybody repeating it.
+   * known here without anybody repeating it. So does a review thread somebody cut
+   * out of the pull request it is on, which arrives already knowing which thread
+   * it splits and needs no url looked up.
    *
    * Forked rather than resumed, because both threads go on living: two of them
    * writing into one session would each find the other's turns in their history.
    */
   function adoptFork(mention: Mention, own: Remembered | undefined): void {
-    if (mention.url === "") return;
     // A thread that threw its own history away is not given somebody else's: a
     // session with none is exactly the gap a fork fills, and filling it would
     // undo the clear at the next mention rather than at some later one.
@@ -873,6 +951,11 @@ export function createConversation({
       log.info("not forking into a thread that has been cleared", { url: mention.url });
       return;
     }
+    if (splitFrom !== undefined) {
+      carryOver(splitFrom.request, splitFrom.point, own, true);
+      return;
+    }
+    if (mention.url === "") return;
     const request = forks.parentOf(mention.url);
     if (request === undefined) return;
 
@@ -887,23 +970,31 @@ export function createConversation({
       return;
     }
 
-    sessionId = parent.sessionId;
-    forkParent = true;
-    carriedFrom = request;
-    // The model and the effort come across with the history, so the pull request
-    // is answered by what did the work rather than by whatever the defaults are.
-    // Anything this thread settled for itself first stays settled.
-    settings = {
-      model: own?.model ?? parent.model ?? settings.model,
-      effort: own?.effort ?? parent.effort ?? settings.effort,
-    };
-    log.info("this thread came out of another one; forking its session", {
-      from: request.from,
-      url: request.url,
-      sessionId,
-      model: settings.model,
-      effort: settings.effort,
-    });
+    carryOver(request, { sessionId: parent.sessionId, model: parent.model, effort: parent.effort }, own, false);
+  }
+
+  /**
+   * Settles which session this thread is on, from what it was left with last time
+   * and from whatever it came out of. Read before anything is decided about a
+   * mention, and again when another thread asks where this one has got to.
+   */
+  function pickUp(mention: Mention): void {
+    conversationKey ??= mention.conversationKey;
+    const remembered = store.get(ownKey() ?? mention.conversationKey);
+    if (sessionId === undefined && remembered !== undefined) {
+      sessionId = remembered.sessionId;
+      cleared ||= remembered.cleared === true;
+      settings = {
+        model: remembered.model ?? settings.model,
+        effort: remembered.effort ?? settings.effort,
+      };
+      log.info("picking a thread back up", {
+        sessionId,
+        model: settings.model,
+        effort: settings.effort,
+      });
+    }
+    if (sessionId === undefined) adoptFork(mention, remembered);
   }
 
   async function start(mention: Mention): Promise<void> {
@@ -967,9 +1058,14 @@ export function createConversation({
   }
 
   return {
+    forkPoint(mention) {
+      pickUp(mention);
+      return { sessionId, model: settings.model, effort: settings.effort };
+    },
+
     snapshot() {
       return {
-        conversationKey,
+        conversationKey: ownKey(),
         cwd: options.cwd,
         sessionId,
         model: settings.model,
@@ -1013,21 +1109,7 @@ export function createConversation({
         });
       }
 
-      const remembered = store.get(mention.conversationKey);
-      if (sessionId === undefined && remembered !== undefined) {
-        sessionId = remembered.sessionId;
-        cleared ||= remembered.cleared === true;
-        settings = {
-          model: remembered.model ?? settings.model,
-          effort: remembered.effort ?? settings.effort,
-        };
-        log.info("picking a thread back up", {
-          sessionId,
-          model: settings.model,
-          effort: settings.effort,
-        });
-      }
-      if (sessionId === undefined) adoptFork(mention, remembered);
+      pickUp(mention);
 
       // Read before the two branches below, because calling the agent off is the
       // one thing a person needs to be able to say while it is running or waiting.

@@ -42,7 +42,7 @@ after(() => {
 });
 
 type Session = {
-  send(prompt: string, id?: string, url?: string, kind?: string): string;
+  send(prompt: string, id?: string, url?: string, kind?: string, raw?: unknown): string;
   waitFor(replyFile: string, contains?: string): Promise<string>;
   end(): Promise<{ code: number | null; log: string }>;
 };
@@ -100,7 +100,7 @@ function start({
 
   let seq = 0;
   return {
-    send(prompt, id, url, kind) {
+    send(prompt, id, url, kind, raw) {
       seq += 1;
       const replyFile = join(dir, `reply-${id ?? seq}.md`);
       child.stdin?.write(
@@ -116,6 +116,7 @@ function start({
           author: "suchipi",
           title: "A test issue",
           receivedAt: "2026-08-22T00:00:00.000Z",
+          ...(raw === undefined ? {} : { raw }),
         })}\n`,
       );
       return replyFile;
@@ -1221,6 +1222,150 @@ describe("driving the claude CLI", () => {
       readdirSync(join(dir, "mention-forwarder-claude-code", "live")),
       [],
     );
+  });
+});
+
+describe("forking a review thread", () => {
+  /** A review comment payload, cut down to what places the comment in its thread. */
+  const inThread = (id: number, root?: number) => ({
+    comment: { id, ...(root === undefined ? {} : { in_reply_to_id: root }) },
+  });
+  const at = (id: number) => `https://github.com/acme/widgets/pull/7#discussion_r${id}`;
+  const review = "pull_request_review_comment";
+
+  function onPullRequest(dir: string, args: string[], env: Record<string, string> = {}, scenario?: string) {
+    return start({ dir, conversationKey: "github:acme/widgets#7", args, env, scenario });
+  }
+
+  function conversations(stateFile: string): Record<string, { sessionId?: string; cwd?: string }> {
+    return (JSON.parse(readFileSync(stateFile, "utf8")) as {
+      conversations: Record<string, { sessionId?: string; cwd?: string }>;
+    }).conversations;
+  }
+
+  it("gives the thread a session of its own, forked off the pull request's", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const transcript = join(dir, "transcript.txt");
+    const session = onPullRequest(dir, ["--state-file", stateFile], {
+      CLAUDE_STUB_TRANSCRIPT: transcript,
+    });
+
+    await session.waitFor(session.send("what is this doing?", "a"));
+
+    const forked = session.send("[fork] work out whether it breaks the importer", "b", at(200), review, inThread(200));
+    const notice = await session.waitFor(forked, "stub answered");
+    match(notice, /This review thread has a session of its own from here/);
+
+    // Every later comment in that thread is answered by the session it made,
+    // rather than going back to the one the pull request is on.
+    const later = session.send("and the exporter?", "c", at(201), review, inThread(201, 200));
+    match(await session.waitFor(later), /stub answered turn 2/);
+    await session.end();
+
+    // A session each, the fork's under a key of its own beneath the pull request's.
+    const remembered = conversations(stateFile);
+    strictEqual(remembered["github:acme/widgets#7"]?.sessionId, "11111111-2222-3333-4444-555555555555");
+    strictEqual(
+      remembered["github:acme/widgets#7#review:200"]?.sessionId,
+      "99999999-8888-7777-6666-555555555555",
+    );
+
+    // Everything above the forked session's first message was said to the pull
+    // request, so that message says which thread this now is.
+    const told = readFileSync(transcript, "utf8");
+    match(told, /\[github:acme\/widgets#7#review:200\] A test issue/);
+    match(told, /This is one review thread on the pull request everything above was said on/);
+  });
+
+  it("answers a forked thread while the pull request's own turn is still waiting", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const session = onPullRequest(dir, ["--state-file", stateFile], {}, "ask");
+
+    const onThePullRequest = session.send("write the file", "a");
+    await session.waitFor(onThePullRequest, "needs permission");
+
+    // Read rather than taken as the answer to what the pull request is waiting
+    // on, and answered by a claude of its own while that goes on waiting.
+    const forked = session.send("[fork] and here too", "b", at(200), review, inThread(200));
+    const asked = await session.waitFor(forked, "needs permission");
+    match(asked, /This review thread has a session of its own from here/);
+
+    const answered = session.send("approve", "c", at(201), review, inThread(201, 200));
+    match(await session.waitFor(answered), /stub wrote the file/);
+
+    const stillWaiting = readFileSync(onThePullRequest, "utf8");
+    ok(
+      !stillWaiting.includes("stub wrote the file"),
+      `the pull request's own turn was answered by the fork's reply: ${stillWaiting}`,
+    );
+    await session.end();
+  });
+
+  it("makes the thread whether or not anything followed the group, and will not make it twice", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const session = onPullRequest(dir, ["--state-file", stateFile]);
+
+    await session.waitFor(session.send("what is this doing?", "a"));
+
+    const alone = session.send("[fork]", "b", at(200), review, inThread(200));
+    const notice = await session.waitFor(alone);
+    match(notice, /This review thread has a session of its own from here/);
+    ok(!notice.includes("stub answered"), `a group on its own ran a turn: ${notice}`);
+
+    const asked = session.send("go on then", "c", at(201), review, inThread(201, 200));
+    match(await session.waitFor(asked), /stub answered turn 1/);
+
+    const again = session.send("[fork] again", "d", at(202), review, inThread(202, 200));
+    const refused = await session.waitFor(again);
+    match(refused, /already has a session of its own/);
+    ok(!refused.includes("stub answered"), `the second fork ran a turn: ${refused}`);
+    await session.end();
+  });
+
+  it("says there is nothing to fork where there is no review thread to fork", async () => {
+    const dir = workspace();
+    const session = onPullRequest(dir, ["--no-state"]);
+
+    const elsewhere = session.send("[fork] have a look", "a");
+    match(await session.waitFor(elsewhere), /only means something written in a review comment/);
+
+    // A review comment with no payload behind it cannot be placed in a thread,
+    // and a fork that could not be followed is worse than none.
+    const unplaceable = session.send("[fork] have a look", "b", at(200), review);
+    const said = await session.waitFor(unplaceable);
+    match(said, /cannot tell which review thread this comment is in/);
+    match(said, /includeRawPayload/);
+    await session.end();
+  });
+
+  it("sends a forked thread's later mentions to its own session in the next process", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const argvFile = join(dir, "argv.json");
+
+    const first = onPullRequest(dir, ["--state-file", stateFile]);
+    await first.waitFor(first.send("what is this doing?", "a"));
+    await first.waitFor(
+      first.send("[fork] look at this", "b", at(200), review, inThread(200)),
+      "stub answered",
+    );
+    await first.end();
+
+    const second = onPullRequest(dir, ["--state-file", stateFile], { CLAUDE_STUB_ARGV_FILE: argvFile });
+    await second.waitFor(second.send("and now?", "c", at(201), review, inThread(201, 200)));
+    await second.end();
+
+    // Only the forked thread ran in that process, so this is its child: it
+    // carried on the session the fork left behind rather than forking again.
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(
+      argv.includes("--resume=99999999-8888-7777-6666-555555555555"),
+      `expected the forked thread's own session in ${JSON.stringify(argv)}`,
+    );
+    ok(!argv.includes("--fork-session"), `expected a resume rather than a fork in ${JSON.stringify(argv)}`);
   });
 });
 

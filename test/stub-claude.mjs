@@ -226,7 +226,9 @@ function runTurn(text) {
   }
 
   // Answers nothing at all, so a test can interrupt the turn without racing it.
-  if (scenario === "hang" && turns === 1) return;
+  // A forked child answers as usual, so a test can watch one thread being
+  // answered while the thread it came out of is stuck.
+  if (scenario === "hang" && turns === 1 && !forked) return;
 
   // Idempotent, because the steer backstop below can race the steer itself, and
   // a turn that answered twice would look like two turns to the program.

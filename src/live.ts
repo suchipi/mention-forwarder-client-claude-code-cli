@@ -10,6 +10,13 @@ export type LiveConversation = ConversationSnapshot & {
   startedAt: string;
   /** When it last published, which is how a process killed without cleanup is spotted. */
   updatedAt: string;
+  /**
+   * Where this conversation comes among the ones that process is running, so a
+   * review thread is listed under the thread it was split off rather than
+   * wherever its file name happens to sort. Absent from entries written before
+   * a process could run more than one.
+   */
+  index?: number;
 };
 
 /**
@@ -20,9 +27,9 @@ export type LiveConversation = ConversationSnapshot & {
 const STALE_MS = 120000;
 
 export type LiveRegistry = {
-  /** Writes this process's entry. Best effort: a failure costs the web view a row, never the run. */
-  publish(snapshot: ConversationSnapshot): void;
-  /** Drops this process's entry, on the way out. */
+  /** Writes an entry for each conversation this process is running. Best effort: a failure costs the web view a row, never the run. */
+  publish(snapshots: ConversationSnapshot[]): void;
+  /** Drops every entry this process wrote, on the way out. */
   remove(): void;
   /** Every entry a live process wrote, oldest process first. */
   list(): LiveConversation[];
@@ -45,16 +52,24 @@ function alive(pid: number): boolean {
 }
 
 /**
- * A directory of one JSON file per running conversation, named after its pid.
+ * A directory of one JSON file per running conversation, named after the process
+ * running it.
  *
  * mention-forwarder runs this program once per conversation, so no single process
  * can see the others; a file each is what makes a list of them possible without a
- * daemon in the middle. Each process writes only its own file, so there is
+ * daemon in the middle. Each process writes only its own files, so there is
  * nothing to coordinate: the only shared operation is reading the directory.
+ *
+ * A process can be running more than one conversation — a review thread that has
+ * [forked](../README.md#forking-a-review-thread) is answered beside the pull
+ * request it came out of — and each of those is a row of its own, so the first
+ * takes the pid and the rest are numbered after it.
  */
 export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
   const startedAt = new Date().toISOString();
-  const file = join(dir, `${process.pid}.json`);
+  const fileFor = (index: number) => join(dir, index === 0 ? `${process.pid}.json` : `${process.pid}.${index}.json`);
+  /** How many files this process has written, so one it no longer publishes is taken away rather than left to go stale. */
+  let written = 0;
   let complained = false;
 
   function warnOnce(message: string, error: unknown): void {
@@ -63,39 +78,45 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
     log.warn(message, { dir, error: error instanceof Error ? error.message : String(error) });
   }
 
-  return {
-    publish(snapshot) {
-      const entry: LiveConversation = {
-        ...snapshot,
-        pid: process.pid,
-        startedAt,
-        updatedAt: new Date().toISOString(),
-      };
-      // Written aside and renamed into place: whichever process serves the web
-      // view reads these files, and must never catch a half-written one.
-      const temporary = `${file}.tmp`;
-      try {
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(temporary, `${JSON.stringify(entry, null, 2)}\n`);
-        renameSync(temporary, file);
-      } catch (error) {
-        warnOnce("could not publish this conversation for the web view", error);
-        try {
-          unlinkSync(temporary);
-        } catch {
-          // Nothing to clean up when the write itself never happened.
-        }
+  function drop(path: string): void {
+    try {
+      unlinkSync(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        warnOnce("could not remove this conversation from the web view", error);
       }
+    }
+  }
+
+  return {
+    publish(snapshots) {
+      const now = new Date().toISOString();
+      snapshots.forEach((snapshot, index) => {
+        const entry: LiveConversation = { ...snapshot, pid: process.pid, startedAt, updatedAt: now, index };
+        const file = fileFor(index);
+        // Written aside and renamed into place: whichever process serves the web
+        // view reads these files, and must never catch a half-written one.
+        const temporary = `${file}.tmp`;
+        try {
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(temporary, `${JSON.stringify(entry, null, 2)}\n`);
+          renameSync(temporary, file);
+        } catch (error) {
+          warnOnce("could not publish this conversation for the web view", error);
+          try {
+            unlinkSync(temporary);
+          } catch {
+            // Nothing to clean up when the write itself never happened.
+          }
+        }
+      });
+      for (let index = snapshots.length; index < written; index += 1) drop(fileFor(index));
+      written = snapshots.length;
     },
 
     remove() {
-      try {
-        unlinkSync(file);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          warnOnce("could not remove this conversation from the web view", error);
-        }
-      }
+      for (let index = 0; index < Math.max(written, 1); index += 1) drop(fileFor(index));
+      written = 0;
     },
 
     list() {
@@ -138,7 +159,10 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
         entries.push(entry);
       }
 
-      return entries.sort((one, other) => Date.parse(one.startedAt) - Date.parse(other.startedAt));
+      return entries.sort(
+        (one, other) =>
+          Date.parse(one.startedAt) - Date.parse(other.startedAt) || (one.index ?? 0) - (other.index ?? 0),
+      );
     },
   };
 }
@@ -151,7 +175,7 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
  * A write only happens when something actually changed, or when the last one is
  * old enough that a reader could start calling it stale.
  */
-export function startPublishing(registry: LiveRegistry, snapshot: () => ConversationSnapshot): { stop(): void } {
+export function startPublishing(registry: LiveRegistry, snapshot: () => ConversationSnapshot[]): { stop(): void } {
   let published = "";
   let publishedAt = 0;
 
