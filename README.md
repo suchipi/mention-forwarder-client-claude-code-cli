@@ -129,6 +129,10 @@ A few lines are also appended to the session's system prompt, because Claude Cod
 
 The thread's link is the mention's own permalink, from whichever mention started the process, and it comes with a note that only the mentions themselves reach the agent, so the rest of the thread is worth reading. A mention that arrives without a permalink leaves the line out.
 
+A session opening as a copy of another thread's — [a pull request's](#threads-that-come-out-of-other-threads), or [a review thread's](#forking-a-review-thread) — is told one thing more, because the thread it was copied from is still live and has an agent of its own in this same working directory:
+
+> This session has just been forked from the thread it came out of, and that thread has an agent of its own which may be working in this same directory at the same time, so what is on disk can change under you between one step and the next. Where you need to change anything, make a git worktree and a branch of your own and work there rather than in this checkout.
+
 The system prompt also asks the agent for one thing back: when it opens a pull request, it writes a line naming that pull request into a file this program reads on the way up. That is what lets the thread the pull request becomes carry on from the session that opened it, and [Threads that come out of other threads](#threads-that-come-out-of-other-threads) is the whole of how. Under `--no-state` there is nowhere to write it, so the request is left out.
 
 ### Telling it something of your own
@@ -434,7 +438,7 @@ Every later mention in that thread runs there, group or no group, and its answer
 | Before anything has run on the pull request                   | There is no history to copy, so the thread starts a session of its own knowing only what is written in it, and the bot says so.                                                       |
 | With `[stop]`, `[exit]`, `[clear]` or `[compact]`             | Refused rather than guessed at: forking is about a thread of its own, and those four are about the thread the comment was written in.                                                  |
 
-**Two agents in one working directory.** A forked thread's `claude` runs in the same `cwd` as the thread it came out of, and neither knows the other is there. Where the agent changes files, give it standing instructions to work on a worktree and a branch of its own — see [Telling it something of your own](#telling-it-something-of-your-own) — or the two will be editing one checkout between them.
+**Two agents in one working directory.** A forked thread's `claude` runs in the same `cwd` as the thread it came out of, and neither knows the other is there. The forked session is [told so](#what-the-agent-is-told) and asked to work on a worktree of its own, which is a request and not a fence: where it matters, say it again in [your own standing instructions](#telling-it-something-of-your-own).
 
 **It needs the webhook payload.** Which review thread a comment belongs to is the one thing a mention does not otherwise say: a reply's permalink names the reply, not the thread it is in, and only `in_reply_to_id` in GitHub's payload ties the two together. So this needs mention-forwarder's `includeRawPayload`:
 

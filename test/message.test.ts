@@ -162,6 +162,16 @@ describe("what the agent is told", () => {
     match(say.systemPrompt("deny"), /refused automatically/);
   });
 
+  it("tells a forked session it is sharing a directory with the thread it came from", () => {
+    const forked = say.systemPrompt("ask", mention, undefined, undefined, true);
+    match(forked, /just been forked from the thread it came out of/);
+    match(forked, /change under you between one step and the next/);
+    match(forked, /make a git worktree and a branch of your own/);
+    // Said only to a session that opens as a copy of another thread's.
+    doesNotMatch(say.systemPrompt("ask", mention), /just been forked/);
+    doesNotMatch(say.systemPrompt("ask", mention, undefined, undefined, false), /just been forked/);
+  });
+
   it("gives the operator the last word in the system prompt", () => {
     const prompt = say.systemPrompt("ask", undefined, "  Work on a branch of your own.  ");
     match(prompt, /waits there until somebody answers/);

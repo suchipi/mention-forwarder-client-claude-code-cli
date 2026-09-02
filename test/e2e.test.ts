@@ -980,6 +980,11 @@ describe("driving the claude CLI", () => {
     );
     ok(argv.includes("--fork-session"), `expected a fork in ${JSON.stringify(argv)}`);
 
+    // The thread it was forked from is still live, in this same directory.
+    const forkedPrompt = argv[argv.indexOf("--append-system-prompt") + 1] ?? "";
+    match(forkedPrompt, /just been forked from the thread it came out of/);
+    match(forkedPrompt, /make a git worktree and a branch of your own/);
+
     // Everything above this message happened in the other thread, so the message
     // says which thread this is instead of carrying on as though it were that one.
     const told = readFileSync(transcript, "utf8");
@@ -1277,8 +1282,10 @@ describe("forking a review thread", () => {
     const dir = workspace();
     const stateFile = join(dir, "sessions.json");
     const transcript = join(dir, "transcript.txt");
+    const argvFile = join(dir, "argv.json");
     const session = onPullRequest(dir, ["--state-file", stateFile], {
       CLAUDE_STUB_TRANSCRIPT: transcript,
+      CLAUDE_STUB_ARGV_FILE: argvFile,
     });
 
     await session.waitFor(session.send("what is this doing?", "a"));
@@ -1299,6 +1306,15 @@ describe("forking a review thread", () => {
     strictEqual(
       remembered["github:acme/widgets#7#review:200"]?.sessionId,
       "99999999-8888-7777-6666-555555555555",
+    );
+
+    // The forked thread's own claude started last, so this is its argv: it was
+    // told that the pull request's agent is working in the same directory.
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(argv.includes("--fork-session"), `expected the fork's argv in ${JSON.stringify(argv)}`);
+    match(
+      argv[argv.indexOf("--append-system-prompt") + 1] ?? "",
+      /just been forked from the thread it came out of/,
     );
 
     // Everything above the forked session's first message was said to the pull

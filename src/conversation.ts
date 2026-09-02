@@ -627,6 +627,9 @@ export function createConversation({
         mention,
         options.appendSystemPrompt,
         record,
+        // True for exactly the run that copies another thread's session, which
+        // is the run that is about to find itself sharing a directory.
+        forkParent,
       ),
       extraArgs: options.extraArgs,
       rules,

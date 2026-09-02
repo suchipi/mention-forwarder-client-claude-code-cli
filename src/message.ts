@@ -34,6 +34,15 @@ function forkNote(record: ForkRecord): string {
 }
 
 /**
+ * Told to a session that opens as a copy of another thread's, because the thread
+ * it was copied from is still live and has an agent of its own in the same
+ * working directory. Nothing here keeps the two apart; the most this can do is
+ * say so, in the one place the agent reads before it touches anything.
+ */
+const FORKED =
+  "This session has just been forked from the thread it came out of, and that thread has an agent of its own which may be working in this same directory at the same time, so what is on disk can change under you between one step and the next. Where you need to change anything, make a git worktree and a branch of your own and work there rather than in this checkout.";
+
+/**
  * Appended to the session's system prompt. Claude Code otherwise has every
  * reason to believe it is talking to someone at a terminal, and the difference
  * decides how it writes and whether it stops to ask.
@@ -44,9 +53,15 @@ function forkNote(record: ForkRecord): string {
  * `extra` is whatever the operator put in `appendSystemPrompt`, added last so
  * their standing instructions read as the final word on how the bot behaves.
  * `record` is last as an argument and second to last in the prompt, for that
- * same reason.
+ * same reason, and `forked` after it for no reason but that it came later.
  */
-export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: string, record?: ForkRecord): string {
+export function systemPrompt(
+  approval: ApprovalMode,
+  mention?: Mention,
+  extra?: string,
+  record?: ForkRecord,
+  forked?: boolean,
+): string {
   const waiting: Record<ApprovalMode, string> = {
     ask: "When you need permission to run a tool, or ask a question with AskUserQuestion, it is posted to the thread and your turn waits there until somebody answers, which can take hours. Do everything that does not depend on the answer first.",
     allow:
@@ -61,6 +76,7 @@ export function systemPrompt(approval: ApprovalMode, mention?: Mention, extra?: 
     "Everything a person says here reaches you labelled with who wrote it. More than one of them can be in the same thread, so read the label before you attribute anything, and quote the right person.",
     ...(mention === undefined ? [] : threadContext(mention)),
     waiting[approval],
+    ...(forked === true ? [FORKED] : []),
     ...(record === undefined ? [] : [forkNote(record)]),
     ...(extra === undefined || extra.trim() === "" ? [] : [extra.trim()]),
   ].join("\n\n");
