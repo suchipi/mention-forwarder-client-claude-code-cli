@@ -7,6 +7,7 @@ import {
   type SplitFrom,
 } from "./conversation.ts";
 import { type Parsed, parseDirective } from "./directive.ts";
+import { hasSettings } from "./settings.ts";
 import * as say from "./message.ts";
 import type { Mention } from "./mention.ts";
 import { isReviewComment, reviewThreadKey } from "./review-thread.ts";
@@ -85,7 +86,7 @@ export function createThreads(deps: ThreadsDeps): Threads {
     // Written down before anything has run here, because the thread is forked from
     // this moment whatever comes of it: this entry is what a second `[fork]` finds,
     // and what sends the thread's later mentions here rather than to the pull request.
-    store.set(key, { cwd: options.cwd, model: from.point.model, effort: from.point.effort });
+    store.set(key, { cwd: options.cwd, settings: hasSettings(from.point.settings) ? from.point.settings : undefined });
     log.info("giving a review thread a session of its own", {
       key,
       url: mention.url,

@@ -1,19 +1,19 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "./logger.ts";
+import { hasSettings, type ThreadSettings } from "./settings.ts";
 
 /** What is remembered about one conversation between processes. */
 export type Remembered = {
   /**
-   * Absent until the session has started, because a `[model=...]` group can settle
+   * Absent until the session has started, because a group in a mention can settle
    * a thread's settings before anything has run in it.
    */
   sessionId?: string;
   /** The directory the session was started in. Claude Code files a session under its project. */
   cwd: string;
-  /** The thread's model and effort, as set by a `[model=...]` group. */
-  model?: string;
-  effort?: string;
+  /** What a group in the thread has put it on, over whatever the process was started on. */
+  settings?: ThreadSettings;
   /**
    * Set once the thread has thrown its history away, which outlives the process
    * that did it: a cleared thread has no session for a later one to resume, and
@@ -22,7 +22,20 @@ export type Remembered = {
   cleared?: boolean;
 };
 
-type Entry = Remembered & { updatedAt: string };
+/**
+ * `model` and `effort` are where a thread's settings were kept before there were
+ * any others, and are still read so an upgrade does not put every thread back on
+ * the defaults. Nothing writes them.
+ */
+type Entry = Remembered & { updatedAt: string; model?: string; effort?: string };
+
+function settingsIn(entry: Entry): ThreadSettings | undefined {
+  if (entry.settings !== undefined) return entry.settings;
+  const legacy: ThreadSettings = {};
+  if (entry.model !== undefined) legacy.model = entry.model;
+  if (entry.effort !== undefined) legacy.effort = entry.effort;
+  return hasSettings(legacy) ? legacy : undefined;
+}
 type Contents = { version: 1; conversations: Record<string, Entry> };
 
 export type SessionStore = {
@@ -105,8 +118,7 @@ export function createSessionStore(path: string | undefined, cwd: string, log: L
       return {
         sessionId: entry.sessionId,
         cwd: entry.cwd,
-        model: entry.model,
-        effort: entry.effort,
+        settings: settingsIn(entry),
         cleared: entry.cleared,
       };
     },

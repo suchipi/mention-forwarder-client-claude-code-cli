@@ -10,6 +10,7 @@ import { loadRules } from "./patterns.ts";
 import { createReply } from "./reply.ts";
 import { createSessionStore } from "./session-store.ts";
 import { createThreads } from "./threads.ts";
+import { PROCESS_ONLY_SETTINGS } from "./settings.ts";
 import { startWebView } from "./web.ts";
 
 /** How long a stop signal waits for Claude Code to wind down before the process leaves anyway. */
@@ -30,10 +31,13 @@ subscription rather than on API billing.
 Meant to be the "command" of a mention-forwarder configured with
 "lifecycle": "per-conversation".
 
-A mention may open with [model=..., effort=...] to set the model for its thread
-from then on; what follows the group is passed to the agent as usual. A GitHub
-review comment may open with [fork] to give its review thread a session of its
-own, forked off the pull request's, which then runs beside it.
+A mention may open with a group like [model=opus, progress=all] to put its thread
+on those settings from then on; what follows the group is passed to the agent as
+usual. Every setting the config file takes can be named there, apart from the
+ones the whole process is on, which say so rather than changing:
+  ${PROCESS_ONLY_SETTINGS.join(", ")}
+A GitHub review comment may open with [fork] to give its review thread a session
+of its own, forked off the pull request's, which then runs beside it.
 
 Options:
   -c, --config <path>       Settings file. Flags win over it. Default, when it

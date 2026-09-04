@@ -1,8 +1,11 @@
-/** Reasoning effort levels `claude --effort` takes. */
-export const EFFORT_LEVELS: readonly string[] = ["low", "medium", "high", "xhigh", "max"];
+import { readSetting, settingNamed, type ThreadSettings } from "./settings.ts";
 
 /** The bare words a group may carry to call the thread's running turn off. */
-export const INTERRUPT_WORDS: ReadonlySet<string> = new Set(["interrupt", "stop", "int"]);
+export const INTERRUPT_WORDS: ReadonlySet<string> = new Set([
+  "interrupt",
+  "stop",
+  "int",
+]);
 
 /** The bare words a group may carry to end the thread's `claude` process. */
 export const EXIT_WORDS: ReadonlySet<string> = new Set(["exit", "quit"]);
@@ -17,9 +20,9 @@ export const COMPACT_WORDS: ReadonlySet<string> = new Set(["compact"]);
 export const FORK_WORDS: ReadonlySet<string> = new Set(["fork"]);
 
 export type Directive = {
-  model?: string;
-  effort?: string;
-  /** Unlike the others this is something to do, not a setting to keep. */
+  /** The settings the group asked this thread to take on, named as the config file names them. */
+  settings: ThreadSettings;
+  /** Unlike the settings this is something to do, not something to keep. */
   interrupt?: boolean;
   /** Something to do as well: end the process, and not only the turn. */
   exit?: boolean;
@@ -32,7 +35,7 @@ export type Directive = {
 };
 
 export type Parsed = {
-  /** What the group asked for, empty when the mention did not open with one. */
+  /** What the group asked for, carrying no settings when the mention did not open with one. */
   directive: Directive;
   /** The mention with the group removed. */
   rest: string;
@@ -42,27 +45,39 @@ export type Parsed = {
 
 const GROUP = /^\[([^\]\n]*)\]/;
 
+function nothing(rest: string, problem?: string): Parsed {
+  return problem === undefined
+    ? { directive: { settings: {} }, rest }
+    : { directive: { settings: {} }, rest, problem };
+}
+
 /**
- * Reads a `[model=..., effort=..., interrupt, exit, clear, compact, fork]` group off the front of a mention.
+ * Reads a `[setting=..., interrupt, exit, clear, compact, fork]` group off the front of a mention.
+ *
+ * A setting is named as the config file names it, and every setting in that file
+ * can be written here, so a thread can be put on anything the process was started
+ * on. Names are matched without regard to case; which values a setting takes is
+ * the setting's own business.
  *
  * Anything else in brackets is left alone and passed to the agent as written,
  * because a comment may well open with `[WIP]` or `[bug]` and mean nothing by it.
- * A group that names a setting this understands but gives it a value it does not
- * is reported instead, so a typo is never silently ignored.
+ * A group that names a setting this understands but cannot honour is reported
+ * instead, so a typo is never silently ignored.
  */
 export function parseDirective(body: string): Parsed {
   const text = body.trim();
   const match = GROUP.exec(text);
-  if (match === null) return { directive: {}, rest: text };
+  if (match === null) return nothing(text);
 
   const inside = match[1] ?? "";
   const parts = inside
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part !== "");
-  if (parts.length === 0) return { directive: {}, rest: text };
+  if (parts.length === 0) return nothing(text);
 
-  const directive: Directive = {};
+  const rest = text.slice(match[0].length).trim();
+  const directive: Directive = { settings: {} };
   for (const part of parts) {
     const split = part.indexOf("=");
     if (split < 0) {
@@ -72,46 +87,38 @@ export function parseDirective(body: string): Parsed {
       else if (CLEAR_WORDS.has(word)) directive.clear = true;
       else if (COMPACT_WORDS.has(word)) directive.compact = true;
       else if (FORK_WORDS.has(word)) directive.fork = true;
-      else return { directive: {}, rest: text };
+      else return nothing(text);
       continue;
     }
-    const name = part.slice(0, split).trim().toLowerCase();
-    const value = part.slice(split + 1).trim();
-    if (name === "model") directive.model = value;
-    else if (name === "effort") directive.effort = value;
-    else return { directive: {}, rest: text };
+    // A name this program has no setting for is somebody else's brackets rather
+    // than a mistake: a comment may open with `[fixes=#12]` and mean only that.
+    const key = settingNamed(part.slice(0, split).trim());
+    if (key === undefined) return nothing(text);
+    const problem = readSetting(
+      directive.settings,
+      key,
+      part.slice(split + 1).trim(),
+    );
+    if (problem !== undefined) return nothing(rest, problem);
   }
 
-  const rest = text.slice(match[0].length).trim();
-  if (directive.model !== undefined && directive.model === "") {
-    return { directive: {}, rest, problem: "that group set `model` to nothing. Write it as `[model=opus]`." };
-  }
-  if (directive.effort !== undefined && !EFFORT_LEVELS.includes(directive.effort.toLowerCase())) {
-    return {
-      directive: {},
-      rest,
-      problem: `I do not know the effort level \`${directive.effort}\`. It has to be one of ${EFFORT_LEVELS.join(", ")}.`,
-    };
-  }
-  if (directive.effort !== undefined) directive.effort = directive.effort.toLowerCase();
   if (
     directive.fork === true &&
-    (directive.interrupt === true || directive.exit === true || directive.clear === true || directive.compact === true)
+    (directive.interrupt === true ||
+      directive.exit === true ||
+      directive.clear === true ||
+      directive.compact === true)
   ) {
-    return {
-      directive: {},
+    return nothing(
       rest,
-      problem:
-        "That group asks me to fork this review thread and to act on the thread it was written in at the same time. Forking starts a thread of its own, where stopping, exiting, clearing and compacting are all about the one this comment is already in, so write one and then the other.",
-    };
+      "That group asks me to fork this review thread and to act on the thread it was written in at the same time. Forking starts a thread of its own, where stopping, exiting, clearing and compacting are all about the one this comment is already in, so write one and then the other.",
+    );
   }
   if (directive.clear === true && directive.compact === true) {
-    return {
-      directive: {},
+    return nothing(
       rest,
-      problem:
-        "That group asks me to clear and to compact at once. Clearing throws this thread's history away and compacting keeps a summary of it, so pick one.",
-    };
+      "That group asks me to clear and to compact at once. Clearing throws this thread's history away and compacting keeps a summary of it, so pick one.",
+    );
   }
 
   return { directive, rest };

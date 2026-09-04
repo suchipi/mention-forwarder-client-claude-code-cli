@@ -1,14 +1,20 @@
 import { type Claude, createClaude, type PermissionResult } from "./claude.ts";
 import { isApproval } from "./answer.ts";
-import { type Directive, type Parsed, parseDirective } from "./directive.ts";
+import { type Parsed, parseDirective } from "./directive.ts";
 import type { ForkRequest, ForkStore } from "./fork-store.ts";
 import type { Logger } from "./logger.ts";
 import * as say from "./message.ts";
 import type { Mention } from "./mention.ts";
-import type { Options } from "./options.ts";
+import { applyThreadSettings, type Options } from "./options.ts";
 import type { Rule } from "./patterns.ts";
 import type { Reply } from "./reply.ts";
 import type { Remembered, SessionStore } from "./session-store.ts";
+import {
+  hasSettings,
+  restartsClaude,
+  settingsToGroup,
+  type ThreadSettings,
+} from "./settings.ts";
 import type { Signal } from "./signals.ts";
 
 type Ask = Extract<Signal, { kind: "ask" }>;
@@ -79,8 +85,7 @@ export type ConversationSnapshot = {
 /** What a thread splitting off another one starts from: the session it is on, and the settings it is on. */
 export type ForkPoint = {
   sessionId: string | undefined;
-  model: string | undefined;
-  effort: string | undefined;
+  settings: ThreadSettings;
 };
 
 /** The thread a conversation was split off, and where that thread had got to. */
@@ -140,11 +145,7 @@ const STARTUP_WINDOW_MS = 15000;
  * out rather than applied here, because a turn is what applies them.
  */
 export function afterDirective(mention: Mention, parsed: Parsed): Mention | undefined {
-  const group: string[] = [];
-  if (parsed.directive.model !== undefined)
-    group.push(`model=${parsed.directive.model}`);
-  if (parsed.directive.effort !== undefined)
-    group.push(`effort=${parsed.directive.effort}`);
+  const group = settingsToGroup(parsed.directive.settings);
   // Not spent by the word that ran: `[exit, clear]` ends the process and still
   // has a history to throw away afterwards.
   if (parsed.directive.clear === true) group.push("clear");
@@ -168,7 +169,10 @@ export function createConversation({
   let claude: Claude | undefined;
   let sessionId: string | undefined;
   let conversationKey: string | undefined;
-  let settings: Directive = { model: options.model, effort: options.effort };
+  /** What a group in this thread has put it on, over what the process was started on. */
+  let settings: ThreadSettings = {};
+  /** Those two settled, so nothing downstream has to know a thread can differ from its process. */
+  let current: Options = options;
 
   let turn: Turn | undefined;
   let parked: Parked | undefined;
@@ -234,13 +238,31 @@ export function createConversation({
       // next process would read it back and resume it rather than fork it, and
       // both threads would be writing their turns into one history.
       sessionId: forkParent ? undefined : sessionId,
-      cwd: options.cwd,
-      model: settings.model,
-      effort: settings.effort,
+      cwd: current.cwd,
+      settings: hasSettings(settings) ? settings : undefined,
       // Left out until it is true, so the file says nothing about the threads
       // that never cleared, which is nearly all of them.
       cleared: cleared ? true : undefined,
     });
+  }
+
+  /**
+   * Puts the thread on the settings a group asked for, over whatever it was on.
+   *
+   * Says whether anything changed, so a group that carried none is not answered
+   * as though it had. Restarting `claude` is the caller's to do: only it knows
+   * whether the turn those settings belong to has started yet.
+   */
+  function takeOn(next: ThreadSettings): boolean {
+    if (!hasSettings(next)) return false;
+    settings = { ...settings, ...next };
+    current = applyThreadSettings(options, settings);
+    // A thread that has just asked to see the work should not have to wait for
+    // the end of the turn to see the part of it that has already happened.
+    if (current.progress === "all") releaseHeldProse();
+    remember();
+    log.info("thread settings changed", { settings });
+    return true;
   }
 
   // --- answering an ask ---
@@ -278,14 +300,14 @@ export function createConversation({
     releaseHeldProse();
     post(say.askNotice(ask));
     const timer =
-      options.askTimeoutMs > 0
+      current.askTimeoutMs > 0
         ? setTimeout(() => {
             log.warn("nobody answered in time", {
               tool: ask.tool.name,
-              afterMs: options.askTimeoutMs,
+              afterMs: current.askTimeoutMs,
             });
             settle(ask, { behavior: "deny", message: say.askTimedOut() });
-          }, options.askTimeoutMs)
+          }, current.askTimeoutMs)
         : undefined;
     timer?.unref();
     parked = { ask, since: new Date().toISOString(), timer };
@@ -298,15 +320,15 @@ export function createConversation({
   function onAsk(ask: Ask): void {
     // A question cannot be approved into an answer the way a tool can, so the
     // only mode that refuses one outright is the one that talks to nobody.
-    if (ask.isQuestion && options.approval === "deny") {
+    if (ask.isQuestion && current.approval === "deny") {
       settle(ask, { behavior: "deny", message: say.nobodyToAsk() });
       return;
     }
-    if (options.approval === "allow" && !ask.isQuestion) {
+    if (current.approval === "allow" && !ask.isQuestion) {
       settle(ask, { behavior: "allow", updatedInput: ask.tool.input });
       return;
     }
-    if (options.approval === "deny") {
+    if (current.approval === "deny") {
       settle(ask, {
         behavior: "deny",
         message: say.refusedByPolicy(ask.tool.name),
@@ -382,7 +404,7 @@ export function createConversation({
           break;
         }
         log.info("agent", { text: signal.text });
-        if (options.progress === "all") post(signal.text, true);
+        if (current.progress === "all") post(signal.text, true);
         else if (turn !== undefined) turn.held.push(signal.text);
         break;
       }
@@ -550,7 +572,7 @@ export function createConversation({
       post(end.text, true);
     }
 
-    if (end.denials.length > 0 && options.approval === "deny")
+    if (end.denials.length > 0 && current.approval === "deny")
       post(say.denialNotice(end.denials));
 
     log.info("turn finished", {
@@ -608,32 +630,32 @@ export function createConversation({
         ? undefined
         : { path: forks.path, from: ownKey() ?? mention.conversationKey };
     const started = createClaude({
-      binary: options.binary,
-      cwd: options.cwd,
-      model: settings.model,
-      effort: settings.effort,
-      permissionMode: options.permissionMode,
-      allowedTools: options.allowedTools,
-      disallowedTools: options.disallowedTools,
+      binary: current.binary,
+      cwd: current.cwd,
+      model: current.model,
+      effort: current.effort,
+      permissionMode: current.permissionMode,
+      allowedTools: current.allowedTools,
+      disallowedTools: current.disallowedTools,
       // The fork file is given to the agent as its own directory to write in, so
       // recording a pull request is not a permission request posted to a thread.
       addDirs:
         forks.directory === undefined
-          ? options.addDirs
-          : [...options.addDirs, forks.directory],
+          ? current.addDirs
+          : [...current.addDirs, forks.directory],
       forkSession: forkParent,
       appendSystemPrompt: say.systemPrompt(
-        options.approval,
+        current.approval,
         mention,
-        options.appendSystemPrompt,
+        current.appendSystemPrompt,
         record,
         // True for exactly the run that copies another thread's session, which
         // is the run that is about to find itself sharing a directory.
         forkParent,
       ),
-      extraArgs: options.extraArgs,
+      extraArgs: current.extraArgs,
       rules,
-      recordPath: options.recordPath,
+      recordPath: current.recordPath,
       log,
       onSignal,
       onExit,
@@ -908,15 +930,13 @@ export function createConversation({
   /**
    * Takes on the session and the settings of the thread this one came out of.
    *
-   * The model and the effort come across with the history, so the new thread is
-   * answered by whatever did the work rather than by the defaults. Anything it
-   * had already settled for itself stays settled.
+   * The settings come across with the history, so the new thread is answered by
+   * whatever did the work rather than by the defaults. Anything it had already
+   * settled for itself stays settled.
    */
   function carryOver(request: ForkRequest, point: ForkPoint, own: Remembered | undefined, split: boolean): void {
-    settings = {
-      model: own?.model ?? point.model ?? settings.model,
-      effort: own?.effort ?? point.effort ?? settings.effort,
-    };
+    settings = { ...point.settings, ...own?.settings, ...settings };
+    current = applyThreadSettings(options, settings);
     if (point.sessionId === undefined) {
       // Nothing to copy: the thread this splits has not run anywhere yet, so this
       // one opens as a thread of its own rather than claiming a history it has not got.
@@ -931,8 +951,7 @@ export function createConversation({
       url: request.url,
       split,
       sessionId,
-      model: settings.model,
-      effort: settings.effort,
+      settings,
     });
   }
 
@@ -973,7 +992,7 @@ export function createConversation({
       return;
     }
 
-    carryOver(request, { sessionId: parent.sessionId, model: parent.model, effort: parent.effort }, own, false);
+    carryOver(request, { sessionId: parent.sessionId, settings: parent.settings ?? {} }, own, false);
   }
 
   /**
@@ -987,15 +1006,9 @@ export function createConversation({
     if (sessionId === undefined && remembered !== undefined) {
       sessionId = remembered.sessionId;
       cleared ||= remembered.cleared === true;
-      settings = {
-        model: remembered.model ?? settings.model,
-        effort: remembered.effort ?? settings.effort,
-      };
-      log.info("picking a thread back up", {
-        sessionId,
-        model: settings.model,
-        effort: settings.effort,
-      });
+      settings = { ...remembered.settings, ...settings };
+      current = applyThreadSettings(options, settings);
+      log.info("picking a thread back up", { sessionId, settings });
     }
     if (sessionId === undefined) adoptFork(mention, remembered);
   }
@@ -1017,22 +1030,13 @@ export function createConversation({
     const actsOnTheHistory =
       directive.clear === true || directive.compact === true;
 
-    if (directive.model !== undefined || directive.effort !== undefined) {
-      settings = {
-        model: directive.model ?? settings.model,
-        effort: directive.effort ?? settings.effort,
-      };
-      remember();
-      // Model and effort are start-up flags, so the change lands on a restart.
-      // The session id is kept, so the thread keeps its history.
-      await restart();
-      log.info("thread settings changed", {
-        model: settings.model,
-        effort: settings.effort,
-      });
+    if (takeOn(directive.settings)) {
+      // Most settings are start-up flags, so the change lands on a restart. The
+      // session id is kept, so the thread keeps its history.
+      if (restartsClaude(directive.settings)) await restart();
 
       if (rest === "" || actsOnTheHistory) {
-        reportTo(mention, say.directiveNotice(directive, settings));
+        reportTo(mention, say.directiveNotice(directive.settings));
         if (!actsOnTheHistory) {
           drain();
           return;
@@ -1063,16 +1067,16 @@ export function createConversation({
   return {
     forkPoint(mention) {
       pickUp(mention);
-      return { sessionId, model: settings.model, effort: settings.effort };
+      return { sessionId, settings };
     },
 
     snapshot() {
       return {
         conversationKey: ownKey(),
-        cwd: options.cwd,
+        cwd: current.cwd,
         sessionId,
-        model: settings.model,
-        effort: settings.effort,
+        model: current.model,
+        effort: current.effort,
         state: parked !== undefined ? "waiting" : turn !== undefined ? "running" : "idle",
         thread,
         turn:
@@ -1142,19 +1146,24 @@ export function createConversation({
       }
 
       if (turn !== undefined) {
-        // Model and effort are start-up flags, so a group carrying one cannot be
-        // folded into a turn already under way; neither can a clear or a compact,
-        // which are about a history this turn is still writing; neither can a
-        // group this program could not read, because `start` reports the problem.
+        // A setting that is a start-up flag cannot be folded into a turn already
+        // under way; neither can a clear or a compact, which are about a history
+        // this turn is still writing; neither can a group this program could not
+        // read, because `start` reports the problem.
         const needsATurnOfItsOwn =
           parsed.problem !== undefined ||
-          parsed.directive.model !== undefined ||
-          parsed.directive.effort !== undefined ||
+          restartsClaude(parsed.directive.settings) ||
           parsed.directive.clear === true ||
           parsed.directive.compact === true;
 
         if (!needsATurnOfItsOwn && claude?.running === true) {
-          steer(mention, parsed.rest);
+          // The rest go straight on, which is the point of writing one here:
+          // `[progress=all]` is worth saying while a silent turn is still going.
+          const changed = takeOn(parsed.directive.settings);
+          if (changed) {
+            reply.append(mention.replyFile, say.directiveNotice(parsed.directive.settings));
+          }
+          if (!changed || parsed.rest !== "") steer(mention, parsed.rest);
           return;
         }
 

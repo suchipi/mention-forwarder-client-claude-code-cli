@@ -1049,10 +1049,10 @@ describe("driving the claude CLI", () => {
 
     // Kept under the forked thread's own key, so the process after this starts on them too.
     const remembered = JSON.parse(readFileSync(stateFile, "utf8")) as {
-      conversations: Record<string, { model?: string; effort?: string }>;
+      conversations: Record<string, { settings?: { model?: string; effort?: string } }>;
     };
-    strictEqual(remembered.conversations["github:acme/widgets#13"]?.model, "opus");
-    strictEqual(remembered.conversations["github:acme/widgets#13"]?.effort, "max");
+    strictEqual(remembered.conversations["github:acme/widgets#13"]?.settings?.model, "opus");
+    strictEqual(remembered.conversations["github:acme/widgets#13"]?.settings?.effort, "max");
   });
 
   it("keeps a setting the forked thread had already made its own", async () => {
@@ -1089,10 +1089,10 @@ describe("driving the claude CLI", () => {
     // The session it borrowed to fork from is not written down as its own: read
     // back, it would be resumed rather than forked, and two threads would share it.
     const between = JSON.parse(readFileSync(stateFile, "utf8")) as {
-      conversations: Record<string, { sessionId?: string; effort?: string }>;
+      conversations: Record<string, { sessionId?: string; settings?: { effort?: string } }>;
     };
     strictEqual(between.conversations["github:acme/widgets#14"]?.sessionId, undefined);
-    strictEqual(between.conversations["github:acme/widgets#14"]?.effort, "low");
+    strictEqual(between.conversations["github:acme/widgets#14"]?.settings?.effort, "low");
 
     const github = start({
       dir,
@@ -1177,6 +1177,43 @@ describe("driving the claude CLI", () => {
     ok(argv.includes("--effort") && argv.includes("high"));
     ok(argv.includes("--permission-mode") && argv.includes("acceptEdits"));
     strictEqual(argv.at(-1), "--fallback-model=sonnet");
+  });
+
+  it("folds a setting that is not a start-up flag into the turn already running", async () => {
+    const dir = workspace();
+    const transcript = join(dir, "transcript.txt");
+    const session = start({
+      dir,
+      scenario: "steer",
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+      args: ["--no-state", "--progress", "final"],
+    });
+
+    const first = session.send("first", "a");
+    const second = session.send("[progress=all] second", "b");
+
+    // Said to the comment that wrote it, while the turn it was written into carries on.
+    match(await session.waitFor(second, "now on progress"), /progress `all`/);
+    match(await session.waitFor(first, "stub answered"), /steered: second/);
+    await session.end();
+
+    // One turn, not two: `progress` is this program's own doing rather than a
+    // flag `claude` was started with, so nothing had to be restarted for it.
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 1);
+  });
+
+  it("refuses a setting the whole process is on rather than quietly ignoring it", async () => {
+    const dir = workspace();
+    const session = start({ dir, args: ["--no-state"] });
+    const reply = session.send("[logLevel=debug] have a look");
+    const body = await session.waitFor(reply, "settled for this whole process");
+    match(body, /`logLevel`/);
+    // Nothing ran: the mention is answered by the refusal and not by the agent.
+    doesNotMatch(body, /stub answered/);
+    await session.end();
   });
 
   it("posts only the answer under --progress final", async () => {

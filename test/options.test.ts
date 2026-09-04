@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, it } from "node:test";
 import { ConfigError, readConfigFile } from "../src/config-file.ts";
-import { resolveOptions } from "../src/options.ts";
+import { applyThreadSettings, resolveOptions } from "../src/options.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "mfcc-options-"));
 after(() => rmSync(directory, { recursive: true, force: true }));
@@ -88,5 +88,36 @@ describe("resolving the options", () => {
   it("keeps claude's own arguments in the order they were given", () => {
     const options = resolveOptions({ "claude-arg": ["--mcp-config", "servers.json"] });
     deepStrictEqual(options.extraArgs, ["--mcp-config", "servers.json"]);
+  });
+});
+
+describe("laying a thread's settings over the process's", () => {
+  it("changes only what the thread set, and leaves the rest as it was", () => {
+    const base = resolveOptions({ model: "sonnet", progress: "final" });
+    const thread = applyThreadSettings(base, { progress: "all" });
+    strictEqual(thread.progress, "all");
+    strictEqual(thread.model, "sonnet");
+    deepStrictEqual(applyThreadSettings(base, {}), base);
+  });
+
+  it("takes each setting to where the resolved options keep it", () => {
+    const base = resolveOptions({});
+    const thread = applyThreadSettings(base, {
+      askTimeoutSeconds: 90,
+      claudeArgs: ["--mcp-config", "servers.json"],
+      addDirs: ["/tmp/shared"],
+    });
+    strictEqual(thread.askTimeoutMs, 90000);
+    deepStrictEqual(thread.extraArgs, ["--mcp-config", "servers.json"]);
+    deepStrictEqual(thread.addDirs, ["/tmp/shared"]);
+  });
+
+  it("leaves the settings a thread cannot own where the process put them", () => {
+    const base = resolveOptions({ "web-port": "4242", "log-level": "warn" });
+    const thread = applyThreadSettings(base, { model: "opus" });
+    strictEqual(thread.webPort, 4242);
+    strictEqual(thread.logLevel, "warn");
+    strictEqual(thread.stateFile, base.stateFile);
+    strictEqual(thread.cwd, base.cwd);
   });
 });

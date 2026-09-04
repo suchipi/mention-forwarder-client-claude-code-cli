@@ -3,8 +3,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { KNOWN_FIELDS, readConfigFile } from "../src/config-file.ts";
-import { EFFORT_LEVELS } from "../src/directive.ts";
-import { APPROVAL_MODES, LEVELS, PERMISSION_MODES, PROGRESS_MODES } from "../src/options.ts";
+import {
+  APPROVAL_MODES,
+  EFFORT_LEVELS,
+  LEVELS,
+  PERMISSION_MODES,
+  PROCESS_ONLY_SETTINGS,
+  PROGRESS_MODES,
+  THREAD_SETTINGS,
+} from "../src/settings.ts";
 
 const schemaPath = fileURLToPath(new URL("../mention-forwarder-claude-code.config.schema.json", import.meta.url));
 const examplePath = fileURLToPath(new URL("../mention-forwarder-claude-code.config.example.json", import.meta.url));
@@ -46,6 +53,11 @@ describe("the settings schema", () => {
         ok(property.markdownDescription.includes(value), `"${key}" does not name "${value}" in its markdownDescription`);
       }
     }
+  });
+
+  it("says of every setting whether a thread may take it on, since a group can name any of them", () => {
+    const classified = [...THREAD_SETTINGS, ...PROCESS_ONLY_SETTINGS];
+    deepStrictEqual(classified.sort(), [...KNOWN_FIELDS].sort());
   });
 
   it("marks anything else as a mistake, the way the program does", () => {

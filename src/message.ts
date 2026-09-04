@@ -1,7 +1,6 @@
 import { APPROVALS } from "./answer.ts";
-import type { Directive } from "./directive.ts";
 import type { Mention } from "./mention.ts";
-import type { ApprovalMode } from "./options.ts";
+import { describeSettings, type ApprovalMode, type ThreadSettings } from "./settings.ts";
 import { reviewThreadKey } from "./review-thread.ts";
 import type { Denial, Signal } from "./signals.ts";
 
@@ -505,16 +504,11 @@ export function startupFailureNotice(detail: string): string {
   return `I could not start Claude Code: ${inlineCode(detail)}`;
 }
 
-/** Confirms a `[model=...]` group that carried no other instruction. */
-export function directiveNotice(
-  directive: Directive,
-  applied: Directive,
-): string {
-  const parts: string[] = [];
-  if (directive.model !== undefined) parts.push(`model \`${applied.model}\``);
-  if (directive.effort !== undefined)
-    parts.push(`effort \`${applied.effort}\``);
-  return parts.length === 0
-    ? "Nothing to change."
-    : `This thread is now on ${parts.join(" and ")}.`;
+/** Confirms a group of settings, whether it carried an instruction as well or stood alone. */
+export function directiveNotice(settings: ThreadSettings): string {
+  const parts = describeSettings(settings);
+  if (parts.length === 0) return "Nothing to change.";
+  const last = parts.at(-1);
+  const listed = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${last}`;
+  return `This thread is now on ${listed}.`;
 }

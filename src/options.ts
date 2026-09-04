@@ -1,14 +1,19 @@
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type ConfigFile, ConfigError, readConfigFile } from "./config-file.ts";
-import { EFFORT_LEVELS } from "./directive.ts";
 import type { Level } from "./logger.ts";
+import {
+  APPROVAL_MODES,
+  EFFORT_LEVELS,
+  LEVELS,
+  PERMISSION_MODES,
+  PROGRESS_MODES,
+  type ApprovalMode,
+  type Progress,
+  type ThreadSettings,
+} from "./settings.ts";
 
-/** What to do when Claude Code asks permission for a tool, or asks a question. */
-export type ApprovalMode = "ask" | "allow" | "deny";
-
-/** Whether the thread sees the agent working, or only its answer. */
-export type Progress = "all" | "final";
+export type { ApprovalMode, Progress } from "./settings.ts";
 
 export type Options = {
   binary: string;
@@ -67,13 +72,6 @@ export type Flags = {
   "log-level"?: string | undefined;
 };
 
-export const APPROVAL_MODES: readonly string[] = ["ask", "allow", "deny"];
-export const PROGRESS_MODES: readonly string[] = ["all", "final"];
-export const LEVELS: readonly string[] = ["debug", "info", "warn", "error"];
-
-/** What `claude --permission-mode` takes. Checked here so a typo fails at startup, not mid-thread. */
-export const PERMISSION_MODES: readonly string[] = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"];
-
 /** Where the web view is served, unless `--web-port` says otherwise. */
 export const DEFAULT_WEB_PORT = 4100;
 
@@ -114,6 +112,16 @@ function optional(name: string, chosen: string | undefined, allowed: readonly st
   return chosen === undefined ? undefined : pick(name, chosen, allowed);
 }
 
+/** As `pick`, for the settings whose allowed values are also their type. */
+function chosenFrom<T extends string>(name: string, chosen: string | undefined, allowed: readonly T[], fallback: T): T {
+  if (chosen === undefined) return fallback;
+  const found = allowed.find((one) => one === chosen);
+  if (found === undefined) {
+    throw new ConfigError(`${name} must be one of ${allowed.join(", ")}, got "${chosen}"`);
+  }
+  return found;
+}
+
 function chooseAskTimeout(flags: Flags, config: ConfigFile): number {
   const seconds = flags["ask-timeout"] === undefined ? config.askTimeoutSeconds : Number(flags["ask-timeout"]);
   if (seconds === undefined) return 0;
@@ -151,19 +159,48 @@ export function resolveOptions(flags: Flags): Options {
     model: flags.model ?? config.model,
     effort: optional("--effort", effort, EFFORT_LEVELS),
     permissionMode: optional("--permission-mode", flags["permission-mode"] ?? config.permissionMode, PERMISSION_MODES),
-    approval: pick("--approval", flags.approval ?? config.approval ?? "ask", APPROVAL_MODES) as ApprovalMode,
+    approval: chosenFrom("--approval", flags.approval ?? config.approval, APPROVAL_MODES, "ask"),
     appendSystemPrompt: flags["append-system-prompt"] ?? config.appendSystemPrompt,
     allowedTools: flags["allowed-tools"] ?? config.allowedTools,
     disallowedTools: flags["disallowed-tools"] ?? config.disallowedTools,
     addDirs: (flags["add-dir"] ?? config.addDirs ?? []).map((one) => resolve(one)),
     extraArgs: flags["claude-arg"] ?? config.claudeArgs ?? [],
-    progress: pick("--progress", flags.progress ?? config.progress ?? "all", PROGRESS_MODES) as Progress,
+    progress: chosenFrom("--progress", flags.progress ?? config.progress, PROGRESS_MODES, "all"),
     askTimeoutMs: chooseAskTimeout(flags, config),
     stateFile: flags["no-state"] === true ? undefined : stateFile,
     forkFile: flags["no-state"] === true ? undefined : forkFileFor(stateFile),
     webPort: chooseWebPort(flags, config),
     patternsFile: patternsFile === undefined ? undefined : resolve(patternsFile),
     recordPath: recordPath === undefined ? undefined : resolve(recordPath),
-    logLevel: pick("--log-level", flags["log-level"] ?? config.logLevel ?? "info", LEVELS) as Level,
+    logLevel: chosenFrom("--log-level", flags["log-level"] ?? config.logLevel, LEVELS, "info"),
+  };
+}
+
+/**
+ * The options a thread is on, which are the ones this process was started on
+ * with whatever a group in that thread has since changed laid over them.
+ *
+ * Only the settings a thread can own are here. The rest — where sessions are
+ * remembered, which port the web view has, how `claude`'s output is read — are
+ * shared with every other conversation this process is running, so a thread that
+ * changed one would be changing them for threads that never asked.
+ */
+export function applyThreadSettings(base: Options, settings: ThreadSettings): Options {
+  return {
+    ...base,
+    binary: settings.binary ?? base.binary,
+    model: settings.model ?? base.model,
+    effort: settings.effort ?? base.effort,
+    permissionMode: settings.permissionMode ?? base.permissionMode,
+    approval: settings.approval ?? base.approval,
+    appendSystemPrompt: settings.appendSystemPrompt ?? base.appendSystemPrompt,
+    allowedTools: settings.allowedTools ?? base.allowedTools,
+    disallowedTools: settings.disallowedTools ?? base.disallowedTools,
+    // Replaced rather than added to, so a thread can narrow what the process was
+    // started with and not only widen it.
+    addDirs: settings.addDirs ?? base.addDirs,
+    extraArgs: settings.claudeArgs ?? base.extraArgs,
+    progress: settings.progress ?? base.progress,
+    askTimeoutMs: settings.askTimeoutSeconds === undefined ? base.askTimeoutMs : Math.round(settings.askTimeoutSeconds * 1000),
   };
 }

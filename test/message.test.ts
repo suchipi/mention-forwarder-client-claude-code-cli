@@ -502,16 +502,17 @@ describe("what the thread sees", () => {
   });
 
   it("confirms a settings change", () => {
+    match(say.directiveNotice({ model: "opus" }), /now on model `opus`\.$/);
+    match(say.directiveNotice({ model: "opus", effort: "max" }), /model `opus` and effort `max`/);
     match(
-      say.directiveNotice({ model: "opus" }, { model: "opus", effort: "high" }),
-      /now on model `opus`\.$/,
+      say.directiveNotice({ model: "opus", effort: "max", progress: "all" }),
+      /model `opus`, effort `max` and progress `all`/,
     );
-    match(
-      say.directiveNotice(
-        { model: "opus", effort: "max" },
-        { model: "opus", effort: "max" },
-      ),
-      /model `opus` and effort `max`/,
-    );
+    match(say.directiveNotice({ addDirs: ["/a", "/b"] }), /addDirs `\/a`, `\/b`/);
+  });
+
+  it("shortens a setting too long to name back in full, since one of them is a whole prompt", () => {
+    const notice = say.directiveNotice({ appendSystemPrompt: "x".repeat(200) });
+    match(notice, /\.\.\.`\.$/);
   });
 });
