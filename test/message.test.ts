@@ -395,11 +395,11 @@ describe("what the thread sees", () => {
     const notice = say.steeredNotice(started, steered);
     ok(notice !== undefined);
     match(notice, /already working/);
-    match(notice, /at its next step/);
+    match(notice, /went into the turn it is on/);
     ok(notice.includes(started.url));
     // Waiting on a turn started in another thread is what forking is for, and
     // this is the moment somebody is watching it happen.
-    match(notice, /Open a comment in this review thread with `\[fork\]`/);
+    match(notice, /Open a comment here with `\[fork\]`/);
   });
 
   it("offers the fork only where forking would work", () => {

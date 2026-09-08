@@ -312,9 +312,9 @@ The turn goes on answering under the comment that started it, so a mention steer
 
 Where that leaves the steering comment out of sight of the answer — another GitHub review thread, another discussion comment, another Linear comment — it gets a line back pointing at where the answer will appear, because nothing else would show that it landed:
 
-> The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: https://github.com/acme/widgets/pull/7#discussion_r100
+> The agent is already working here, so this went into the turn it is on. That turn replies where it started: https://github.com/acme/widgets/pull/7#discussion_r100
 >
-> Open a comment in this review thread with `[fork]` if you would rather it ran on its own from here: the thread gets a session of its own, answered in it, alongside the rest of the pull request rather than behind it.
+> Open a comment here with `[fork]` to give this review thread a session of its own, running beside the pull request rather than behind it.
 
 The second half is offered to a GitHub review thread and nowhere else, since [forking](#forking-a-review-thread) is a thing only a review thread can ask for — and waiting on a turn that started somewhere else is what it is for, which is worth saying where somebody is watching it happen.
 

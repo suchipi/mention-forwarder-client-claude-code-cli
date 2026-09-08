@@ -397,11 +397,11 @@ export function steeredNotice(
   steerer: Mention,
 ): string | undefined {
   if (owner.url === "" || answeredTogether(owner, steerer)) return undefined;
-  const notice = `The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: ${owner.url}`;
+  const notice = `The agent is already working here, so this went into the turn it is on. That turn replies where it started: ${owner.url}`;
   if (reviewThreadKey(steerer) === undefined) return notice;
   return `${notice}
 
-Open a comment in this review thread with \`[fork]\` if you would rather it ran on its own from here: the thread gets a session of its own, answered in it, alongside the rest of the pull request rather than behind it.`;
+Open a comment here with \`[fork]\` to give this review thread a session of its own, running beside the pull request rather than behind it.`;
 }
 
 /** Posted once a turn somebody called off has actually stopped. */
