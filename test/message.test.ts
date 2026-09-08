@@ -397,6 +397,26 @@ describe("what the thread sees", () => {
     match(notice, /already working/);
     match(notice, /at its next step/);
     ok(notice.includes(started.url));
+    // Waiting on a turn started in another thread is what forking is for, and
+    // this is the moment somebody is watching it happen.
+    match(notice, /Open a comment in this review thread with `\[fork\]`/);
+  });
+
+  it("offers the fork only where forking would work", () => {
+    // A Linear comment is answered under itself, so it gets the pointer, but
+    // there is no review thread here to give a session to.
+    const started = like({
+      platform: "linear",
+      kind: "comment",
+      conversationKey: "linear:9f2c1e40",
+      url: "https://linear.app/acme/issue/ENG-1#comment-a",
+    });
+    const steered = { ...started, url: `${started.url}b` };
+    doesNotMatch(say.steeredNotice(started, steered) ?? "", /\[fork\]/);
+
+    // Nor when the comment is in a review thread nothing can place.
+    const unplaceable = like({ kind: "pull_request_review_comment", url: "https://github.com/acme/widgets/pull/7#discussion_r1" });
+    doesNotMatch(say.steeredNotice(reviewComment(100), unplaceable) ?? "", /\[fork\]/);
   });
 
   it("points a steered Linear comment at it too, each being answered under itself", () => {

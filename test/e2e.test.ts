@@ -757,10 +757,12 @@ describe("driving the claude CLI", () => {
       { comment: { id: 2 } },
     );
 
-    // Told to the comment that steered it, since nothing else says it landed.
+    // Told to the comment that steered it, since nothing else says it landed,
+    // and offered the group that would have had it answered on its own.
     const notice = await session.waitFor(second, "already working");
     match(notice, /at its next step/);
     match(notice, /discussion_r1/);
+    match(notice, /with `\[fork\]`/);
 
     // The answer belongs to the comment that started the turn, not the one that
     // steered it: on GitHub those are two different review threads.

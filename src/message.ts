@@ -386,13 +386,22 @@ function answeredTogether(one: Mention, other: Mention): boolean {
  * Nothing at all when that answer is coming to the same thread this would be
  * posted in, or when there is no permalink to point at: the pointer is the whole
  * reason to speak, and the answer landing there says everything this would have.
+ *
+ * A review thread is offered `[fork]` with it, because waiting on a turn started
+ * somewhere else is exactly what forking is for, and this is the moment somebody
+ * is watching it happen. Offered only where it would work: a review thread this
+ * can recognize, which is the same thing `[fork]` itself needs.
  */
 export function steeredNotice(
   owner: Mention,
   steerer: Mention,
 ): string | undefined {
   if (owner.url === "" || answeredTogether(owner, steerer)) return undefined;
-  return `The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: ${owner.url}`;
+  const notice = `The agent is already working here, so this went to it as it runs. It picks this up at its next step and answers it as part of the turn it is on. That turn replies where it started, so the answer appears there: ${owner.url}`;
+  if (reviewThreadKey(steerer) === undefined) return notice;
+  return `${notice}
+
+Open a comment in this review thread with \`[fork]\` if you would rather it ran on its own from here: the thread gets a session of its own, answered in it, alongside the rest of the pull request rather than behind it.`;
 }
 
 /** Posted once a turn somebody called off has actually stopped. */
