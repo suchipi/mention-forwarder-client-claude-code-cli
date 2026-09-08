@@ -397,7 +397,7 @@ export function steeredNotice(
   steerer: Mention,
 ): string | undefined {
   if (owner.url === "" || answeredTogether(owner, steerer)) return undefined;
-  const notice = `The agent is already working here, so this went into the turn it is on. That turn replies where it started: ${owner.url}`;
+  const notice = `The agent is already working here, so this went to the turn already running. That turn answers under the comment that started it: ${owner.url}`;
   if (reviewThreadKey(steerer) === undefined) return notice;
   return `${notice}
 

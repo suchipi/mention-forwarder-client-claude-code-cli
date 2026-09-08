@@ -760,7 +760,7 @@ describe("driving the claude CLI", () => {
     // Told to the comment that steered it, since nothing else says it landed,
     // and offered the group that would have had it answered on its own.
     const notice = await session.waitFor(second, "already working");
-    match(notice, /went into the turn it is on/);
+    match(notice, /went to the turn already running/);
     match(notice, /discussion_r1/);
     match(notice, /with `\[fork\]`/);
 
