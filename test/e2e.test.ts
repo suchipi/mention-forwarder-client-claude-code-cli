@@ -1328,8 +1328,9 @@ describe("forking a review thread", () => {
     await session.waitFor(session.send("what is this doing?", "a"));
 
     const forked = session.send("[fork] work out whether it breaks the importer", "b", at(200), review, inThread(200));
-    const notice = await session.waitFor(forked, "stub answered");
-    match(notice, /This review thread has a session of its own from here/);
+    // The fork says nothing for itself: what comes back is the answer to what
+    // followed the group, with nothing on top of it.
+    match(await session.waitFor(forked, "stub answered"), /^stub answered turn 1/);
 
     // Every later comment in that thread is answered by the session it made,
     // rather than going back to the one the pull request is on.
@@ -1373,7 +1374,7 @@ describe("forking a review thread", () => {
     // on, and answered by a claude of its own while that goes on waiting.
     const forked = session.send("[fork] and here too", "b", at(200), review, inThread(200));
     const asked = await session.waitFor(forked, "needs permission");
-    match(asked, /This review thread has a session of its own from here/);
+    match(asked, /^stub is about to write/);
 
     const answered = session.send("approve", "c", at(201), review, inThread(201, 200));
     match(await session.waitFor(answered), /stub wrote the file/);
@@ -1386,17 +1387,16 @@ describe("forking a review thread", () => {
     await session.end();
   });
 
-  it("makes the thread whether or not anything followed the group, and will not make it twice", async () => {
+  it("makes the thread without a word, and will not make it twice", async () => {
     const dir = workspace();
     const stateFile = join(dir, "sessions.json");
     const session = onPullRequest(dir, ["--state-file", stateFile]);
 
     await session.waitFor(session.send("what is this doing?", "a"));
 
+    // A group on its own runs no turn, and the fork does not announce itself, so
+    // this comment is answered with no comment at all.
     const alone = session.send("[fork]", "b", at(200), review, inThread(200));
-    const notice = await session.waitFor(alone);
-    match(notice, /This review thread has a session of its own from here/);
-    ok(!notice.includes("stub answered"), `a group on its own ran a turn: ${notice}`);
 
     const asked = session.send("go on then", "c", at(201), review, inThread(201, 200));
     match(await session.waitFor(asked), /stub answered turn 1/);
@@ -1405,6 +1405,25 @@ describe("forking a review thread", () => {
     const refused = await session.waitFor(again);
     match(refused, /already has a session of its own/);
     ok(!refused.includes("stub answered"), `the second fork ran a turn: ${refused}`);
+    await session.end();
+
+    // Read once the session is over, when nothing further can be written to it.
+    const silent = existsSync(alone) ? readFileSync(alone, "utf8") : "";
+    strictEqual(silent.trim(), "");
+  });
+
+  it("says so when there was no session to copy into the new thread", async () => {
+    const dir = workspace();
+    const session = onPullRequest(dir, ["--no-state"]);
+
+    // Nothing has run on the pull request, so the thread this splits has no
+    // session behind it and the new one starts blank: the one fork worth a word.
+    const forked = session.send("[fork] have a look", "a", at(200), review, inThread(200));
+    const said = await session.waitFor(forked, "nothing to copy");
+    match(said, /no session to fork/);
+
+    // Made all the same, and answering in the thread from here.
+    match(await session.waitFor(forked, "stub answered"), /stub answered turn 1/);
     await session.end();
   });
 

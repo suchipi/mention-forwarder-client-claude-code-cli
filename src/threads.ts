@@ -92,10 +92,12 @@ export function createThreads(deps: ThreadsDeps): Threads {
       url: mention.url,
       forkedFrom: from.point.sessionId,
     });
-    reply.append(
-      mention.replyFile,
-      from.point.sessionId === undefined ? say.forkedFromNothingNotice() : say.forkedNotice(),
-    );
+
+    // A fork that worked says nothing for itself: whatever followed the group is
+    // answered under the same comment, so a line saying so only lands on top of it.
+    // One that copied nothing is the exception, being the one way [fork] leaves
+    // the thread with something other than what it asked for.
+    if (from.point.sessionId === undefined) reply.append(mention.replyFile, say.forkedFromNothingNotice());
 
     const next = afterDirective(mention, parsed);
     if (next !== undefined) await conversation.handle(next);

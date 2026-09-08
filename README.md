@@ -446,13 +446,20 @@ fork
 
 Every review comment on a pull request reaches the bot as part of that pull request's conversation: one session for all of them, and one turn at a time, however many threads are open on the diff. Written in a review comment, `[fork]` takes the thread it is in out of that. From then on the thread has a session of its own — opened as a copy of the pull request's, so it knows everything said there up to this point — and a `claude` of its own running beside it, so two review threads can be answered at once with neither waiting on the other. Nothing said in the thread from here reaches the pull request's own thread or the other threads on it, and nothing said in those reaches it.
 
-> This review thread has a session of its own from here. It starts as a copy of the one this pull request is on, so it knows everything said there so far, and nothing said in it after this reaches the rest of the pull request. It runs alongside that thread rather than behind it, so an answer here no longer waits for whatever else the bot is doing on this pull request.
+Nothing is posted to say it happened. `[fork] have a look` comes back as the answer to "have a look" and nothing else, and `[fork]` on its own comes back as no comment at all: the fork is what the comment asked for, so a line saying so would only ever sit on top of the answer to the same comment. The log says it, and [the list of what is running](#seeing-what-is-running) grows a row for the new thread.
+
+What the thread does hear about is a fork that gave it something other than what it asked for. One that found no session to copy says so, because the new thread starts knowing nothing of the pull request:
+
+> There was nothing to copy into this review thread: nothing has run in this pull request's own thread yet, so there was no session to fork. The thread has one of its own from here all the same, and it starts knowing only what is written in it.
+
+So does one that was refused outright — a thread that already has a session, a comment that is not in a review thread, a review comment that cannot be placed in one.
 
 Every later mention in that thread runs there, group or no group, and its answers are posted as replies in it, which is where mention-forwarder answers a review comment anyway. This is the same forking as [Threads that come out of other threads](#threads-that-come-out-of-other-threads), asked for from the thread rather than earned by opening a pull request, and it is remembered the same way: the thread keeps its session when the process for it has gone.
 
 |                                                               |                                                                                                                                                                                       |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A thread that has already been forked                         | Nothing to do, and the bot says so. Forking it again would start a second session on a thread whose first is already answering it, knowing only the half it had seen.                 |
+| A thread that has not been forked                             | Nothing said in it, and no comment back. The fork is made and the thread is answered by it from then on.                                                                              |
 | Anywhere but a review comment                                 | Nothing to fork, and the bot says so. The comment is answered in the thread as it always was.                                                                                         |
 | While a turn is running on the pull request                   | The fork is made and starts its own turn at once. That is the point: the pull request's turn carries on untouched.                                                                     |
 | While a turn is waiting on a permission request or a question | The fork is made, and the request goes on waiting for somebody to answer it. `[fork]` is read while something is waiting, as `[stop]` and `[exit]` are.                                |

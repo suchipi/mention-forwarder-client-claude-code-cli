@@ -486,11 +486,10 @@ describe("what the thread sees", () => {
     match(say.compactedNotice(undefined), /without saying whether it had/);
   });
 
-  it("says what a fork left the new thread knowing, and what it does not", () => {
-    match(say.forkedNotice(), /This review thread has a session of its own from here/);
-    match(say.forkedNotice(), /starts as a copy of the one this pull request is on/);
-    match(say.forkedNotice(), /alongside that thread rather than behind it/);
-    match(say.forkedFromNothingNotice(), /Nothing has run in this pull request's own thread yet/);
+  it("says when a fork found no session to copy, which no other fork is worth a word for", () => {
+    match(say.forkedFromNothingNotice(), /nothing to copy into this review thread/);
+    match(say.forkedFromNothingNotice(), /no session to fork/);
+    match(say.forkedFromNothingNotice(), /starts knowing only what is written in it/);
   });
 
   it("says why it will not fork a thread twice, or a comment that is not in one", () => {

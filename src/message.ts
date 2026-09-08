@@ -412,18 +412,12 @@ export function nothingToExit(): string {
 }
 
 /**
- * Posted to the review comment that asked for a session of its own, once it has
- * one. It says what the new session knows and what it does not, because from
- * here the thread is answered by an agent the rest of the pull request cannot
- * see and which cannot see the rest of the pull request.
+ * Posted when a fork found no session to copy, which is the one outcome of a
+ * fork worth a comment: the thread asked to carry on from the pull request's
+ * work and got a thread of its own that knows none of it.
  */
-export function forkedNotice(): string {
-  return "This review thread has a session of its own from here. It starts as a copy of the one this pull request is on, so it knows everything said there so far, and nothing said in it after this reaches the rest of the pull request. It runs alongside that thread rather than behind it, so an answer here no longer waits for whatever else the bot is doing on this pull request.";
-}
-
-/** Posted instead when nothing has ever run in the pull request's own thread, so there was no history to copy. */
 export function forkedFromNothingNotice(): string {
-  return "This review thread has a session of its own from here. Nothing has run in this pull request's own thread yet, so there was nothing to copy into it: it starts knowing only what is written in this thread. It runs alongside the pull request's thread rather than behind it.";
+  return "There was nothing to copy into this review thread: nothing has run in this pull request's own thread yet, so there was no session to fork. The thread has one of its own from here all the same, and it starts knowing only what is written in it.";
 }
 
 /** Posted when a review thread that already has a session of its own is asked for another. */
