@@ -395,7 +395,7 @@ describe("what the thread sees", () => {
     const notice = say.steeredNotice(started, steered);
     ok(notice !== undefined);
     match(notice, /already working/);
-    match(notice, /went to the turn already running/);
+    match(notice, /picked this up as part of that/);
     ok(notice.includes(started.url));
     // Waiting on a turn started in another thread is what forking is for, and
     // this is the moment somebody is watching it happen.
