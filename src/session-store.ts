@@ -20,6 +20,13 @@ export type Remembered = {
    * this is what keeps that gap from being filled by the work it came out of.
    */
   cleared?: boolean;
+  /**
+   * Set once this thread's session began as a copy of another thread's. It
+   * outlives the run that copied it because what it describes does: the thread
+   * it was forked from goes on living in the same working directory, so every
+   * later run of this one is still sharing that directory with it.
+   */
+  forked?: boolean;
 };
 
 /**
@@ -120,6 +127,7 @@ export function createSessionStore(path: string | undefined, cwd: string, log: L
         cwd: entry.cwd,
         settings: settingsIn(entry),
         cleared: entry.cleared,
+        forked: entry.forked,
       };
     },
 

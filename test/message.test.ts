@@ -164,12 +164,16 @@ describe("what the agent is told", () => {
 
   it("tells a forked session it is sharing a directory with the thread it came from", () => {
     const forked = say.systemPrompt("ask", mention, undefined, undefined, true);
-    match(forked, /just been forked from the thread it came out of/);
+    match(forked, /forked from another thread's, which is still live/);
     match(forked, /change under you between one step and the next/);
-    match(forked, /make a git worktree and a branch of your own/);
-    // Said only to a session that opens as a copy of another thread's.
-    doesNotMatch(say.systemPrompt("ask", mention), /just been forked/);
-    doesNotMatch(say.systemPrompt("ask", mention, undefined, undefined, false), /just been forked/);
+    match(forked, /make a git worktree of your own and work only in it/);
+    // The history it copied is one in which a worktree was already made, so an
+    // agent that reads "work in a worktree" as already done is the whole failure.
+    match(forked, /Any worktree or branch named above belongs to that thread/);
+    match(forked, /detached worktree at its head/);
+    // Said only to a thread whose session began as a copy of another one's.
+    doesNotMatch(say.systemPrompt("ask", mention), /forked from another thread/);
+    doesNotMatch(say.systemPrompt("ask", mention, undefined, undefined, false), /forked from another thread/);
   });
 
   it("gives the operator the last word in the system prompt", () => {

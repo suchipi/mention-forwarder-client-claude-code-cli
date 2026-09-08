@@ -33,13 +33,18 @@ function forkNote(record: ForkRecord): string {
 }
 
 /**
- * Told to a session that opens as a copy of another thread's, because the thread
- * it was copied from is still live and has an agent of its own in the same
- * working directory. Nothing here keeps the two apart; the most this can do is
- * say so, in the one place the agent reads before it touches anything.
+ * Told to every run of a thread whose session began as a copy of another one's,
+ * because the thread it was copied from is still live and has an agent of its own
+ * in the same working directory. Nothing here keeps the two apart; the most this
+ * can do is say so, in the one place the agent reads before it touches anything.
+ *
+ * It names the worktree in the history rather than only asking for one, because
+ * the history it copied is one in which the agent made a worktree and worked in
+ * it, so an agent told to work in a worktree of its own reads that as already
+ * done and carries on in the thread it was forked from.
  */
 const FORKED =
-  "This session has just been forked from the thread it came out of, and that thread has an agent of its own which may be working in this same directory at the same time, so what is on disk can change under you between one step and the next. Where you need to change anything, make a git worktree and a branch of your own and work there rather than in this checkout.";
+  "This thread's session was forked from another thread's, which is still live and has an agent of its own working in the same directory. Any worktree or branch named above belongs to that thread rather than to you, however much of the history above reads as your own doing, and its files can change under you between one step and the next. Before you change anything, make a git worktree of your own and work only in it; git will not check out a branch that is checked out elsewhere, so where your work belongs on that branch, take a detached worktree at its head and push from there.";
 
 /**
  * Appended to the session's system prompt. Claude Code otherwise has every

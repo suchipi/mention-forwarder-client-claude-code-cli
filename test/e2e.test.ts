@@ -980,10 +980,11 @@ describe("driving the claude CLI", () => {
     );
     ok(argv.includes("--fork-session"), `expected a fork in ${JSON.stringify(argv)}`);
 
-    // The thread it was forked from is still live, in this same directory.
+    // The thread it was forked from is still live, in this same directory, and
+    // the worktree in the history it copied is that thread's rather than this one's.
     const forkedPrompt = argv[argv.indexOf("--append-system-prompt") + 1] ?? "";
-    match(forkedPrompt, /just been forked from the thread it came out of/);
-    match(forkedPrompt, /make a git worktree and a branch of your own/);
+    match(forkedPrompt, /forked from another thread's, which is still live/);
+    match(forkedPrompt, /Any worktree or branch named above belongs to that thread/);
 
     // Everything above this message happened in the other thread, so the message
     // says which thread this is instead of carrying on as though it were that one.
@@ -1352,7 +1353,7 @@ describe("forking a review thread", () => {
     ok(argv.includes("--fork-session"), `expected the fork's argv in ${JSON.stringify(argv)}`);
     match(
       argv[argv.indexOf("--append-system-prompt") + 1] ?? "",
-      /just been forked from the thread it came out of/,
+      /forked from another thread's, which is still live/,
     );
 
     // Everything above the forked session's first message was said to the pull
@@ -1468,6 +1469,12 @@ describe("forking a review thread", () => {
       `expected the forked thread's own session in ${JSON.stringify(argv)}`,
     );
     ok(!argv.includes("--fork-session"), `expected a resume rather than a fork in ${JSON.stringify(argv)}`);
+
+    // The copying is over and the sharing is not, so this run is told as well.
+    match(
+      argv[argv.indexOf("--append-system-prompt") + 1] ?? "",
+      /Any worktree or branch named above belongs to that thread/,
+    );
   });
 });
 

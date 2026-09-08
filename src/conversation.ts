@@ -188,6 +188,13 @@ export function createConversation({
   let resumeFailed = false;
   /** Set while the session id held here is another thread's, so the next start copies it rather than joining it. */
   let forkParent = false;
+  /**
+   * Set once this thread's session began as a copy of another thread's. Where
+   * `forkParent` is the one run that copies, this is what that run left behind:
+   * the thread it was forked from is still live in the same working directory on
+   * every run after it, so every run after it is told, in this process and the next.
+   */
+  let forked = false;
   /** Set once this thread has thrown its history away, which is also a refusal of anybody else's. */
   let cleared = false;
   /**
@@ -243,6 +250,7 @@ export function createConversation({
       // Left out until it is true, so the file says nothing about the threads
       // that never cleared, which is nearly all of them.
       cleared: cleared ? true : undefined,
+      forked: forked ? true : undefined,
     });
   }
 
@@ -649,9 +657,7 @@ export function createConversation({
         mention,
         current.appendSystemPrompt,
         record,
-        // True for exactly the run that copies another thread's session, which
-        // is the run that is about to find itself sharing a directory.
-        forkParent,
+        forked,
       ),
       extraArgs: current.extraArgs,
       rules,
@@ -945,6 +951,7 @@ export function createConversation({
     }
     sessionId = point.sessionId;
     forkParent = true;
+    forked = true;
     carriedFrom = { request, split };
     log.info("this thread came out of another one; forking its session", {
       from: request.from,
@@ -1006,6 +1013,7 @@ export function createConversation({
     if (sessionId === undefined && remembered !== undefined) {
       sessionId = remembered.sessionId;
       cleared ||= remembered.cleared === true;
+      forked ||= remembered.forked === true;
       settings = { ...remembered.settings, ...settings };
       current = applyThreadSettings(options, settings);
       log.info("picking a thread back up", { sessionId, settings });
