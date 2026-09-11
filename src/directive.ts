@@ -19,6 +19,9 @@ export const COMPACT_WORDS: ReadonlySet<string> = new Set(["compact"]);
 /** The bare words a group may carry to give the GitHub review thread it was written in a session of its own. */
 export const FORK_WORDS: ReadonlySet<string> = new Set(["fork"]);
 
+/** The bare words a group may carry to give it one that starts on nothing rather than on a copy. */
+export const NEW_WORDS: ReadonlySet<string> = new Set(["new"]);
+
 export type Directive = {
   /** The settings the group asked this thread to take on, named as the config file names them. */
   settings: ThreadSettings;
@@ -30,8 +33,10 @@ export type Directive = {
   clear?: boolean;
   /** And another: keep that history as a summary of itself rather than throwing it away. */
   compact?: boolean;
-  /** And another, and the only one about a thread other than the one it was written in. */
+  /** And another, and the only kind about a thread other than the one it was written in. */
   fork?: boolean;
+  /** The same, on a session that starts knowing nothing rather than on a copy of the one above. */
+  new?: boolean;
 };
 
 export type Parsed = {
@@ -52,7 +57,7 @@ function nothing(rest: string, problem?: string): Parsed {
 }
 
 /**
- * Reads a `[setting=..., interrupt, exit, clear, compact, fork]` group off the front of a mention.
+ * Reads a `[setting=..., interrupt, exit, clear, compact, fork, new]` group off the front of a mention.
  *
  * A setting is named as the config file names it, and every setting in that file
  * can be written here, so a thread can be put on anything the process was started
@@ -87,6 +92,7 @@ export function parseDirective(body: string): Parsed {
       else if (CLEAR_WORDS.has(word)) directive.clear = true;
       else if (COMPACT_WORDS.has(word)) directive.compact = true;
       else if (FORK_WORDS.has(word)) directive.fork = true;
+      else if (NEW_WORDS.has(word)) directive.new = true;
       else return nothing(text);
       continue;
     }
@@ -102,8 +108,14 @@ export function parseDirective(body: string): Parsed {
     if (problem !== undefined) return nothing(rest, problem);
   }
 
+  if (directive.fork === true && directive.new === true) {
+    return nothing(
+      rest,
+      "That group asks me to give this review thread a session of its own twice over. `[fork]` opens one on a copy of the pull request's, `[new]` opens one that starts knowing nothing, so pick one.",
+    );
+  }
   if (
-    directive.fork === true &&
+    (directive.fork === true || directive.new === true) &&
     (directive.interrupt === true ||
       directive.exit === true ||
       directive.clear === true ||
@@ -111,7 +123,7 @@ export function parseDirective(body: string): Parsed {
   ) {
     return nothing(
       rest,
-      "That group asks me to fork this review thread and to act on the thread it was written in at the same time. Forking starts a thread of its own, where stopping, exiting, clearing and compacting are all about the one this comment is already in, so write one and then the other.",
+      "That group asks me to give this review thread a session of its own and to act on the thread it was written in at the same time. `[fork]` and `[new]` start a thread of its own, where stopping, exiting, clearing and compacting are all about the one this comment is already in, so write one and then the other.",
     );
   }
   if (directive.clear === true && directive.compact === true) {

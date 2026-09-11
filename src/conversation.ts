@@ -903,7 +903,7 @@ export function createConversation({
     const text =
       carried === undefined
         ? opening
-          ? say.firstMessage(mention, body)
+          ? say.firstMessage(mention, body, ownKey())
           : say.followUpMessage(mention, body)
         : carried.split
           ? say.splitOffMessage(mention, body, ownKey() ?? mention.conversationKey)

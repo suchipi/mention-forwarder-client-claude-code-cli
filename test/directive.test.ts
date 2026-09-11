@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CLEAR_WORDS, COMPACT_WORDS, EXIT_WORDS, FORK_WORDS, INTERRUPT_WORDS, parseDirective } from "../src/directive.ts";
+import { CLEAR_WORDS, COMPACT_WORDS, EXIT_WORDS, FORK_WORDS, INTERRUPT_WORDS, NEW_WORDS, parseDirective } from "../src/directive.ts";
 import { APPROVALS, isApproval } from "../src/answer.ts";
 import { readSetting, THREAD_SETTINGS } from "../src/settings.ts";
 
@@ -278,11 +278,11 @@ describe("the [fork] word", () => {
     deepStrictEqual(parseDirective("[effort=max, fork]").directive, { settings: { effort: "max" }, fork: true });
   });
 
-  it("refuses to fork and act on the thread it was written in at once", () => {
-    for (const body of ["[fork, stop]", "[exit, fork]", "[fork, clear]", "[fork, compact] go"]) {
+  it("refuses to make a thread of its own and act on the thread it was written in at once", () => {
+    for (const body of ["[fork, stop]", "[exit, fork]", "[fork, clear]", "[new, compact] go", "[new, stop]"]) {
       const parsed = parseDirective(body);
       deepStrictEqual(parsed.directive, { settings: {} }, body);
-      match(parsed.problem ?? "", /fork this review thread and to act on the thread it was written in/, body);
+      match(parsed.problem ?? "", /session of its own and to act on the thread it was written in/, body);
     }
   });
 
@@ -303,6 +303,49 @@ describe("the [fork] word", () => {
       .map((word) => word.trim())
       .filter((word) => word !== "");
     deepStrictEqual(new Set(documented), FORK_WORDS);
+  });
+});
+
+describe("the [new] word", () => {
+  it("takes the word it documents, whatever its case", () => {
+    for (const word of ["new", "NEW", "New"]) {
+      deepStrictEqual(parseDirective(`[${word}]`).directive, { settings: {}, new: true }, word);
+    }
+  });
+
+  it("hands back whatever followed it, so the new thread has something to open with", () => {
+    const parsed = parseDirective("[new] read this file from the top");
+    deepStrictEqual(parsed.directive, { settings: {}, new: true });
+    strictEqual(parsed.rest, "read this file from the top");
+  });
+
+  it("sits alongside the settings, which settle the thread it makes", () => {
+    deepStrictEqual(parseDirective("[new, model=haiku] have a look").directive, { settings: { model: "haiku" }, new: true });
+  });
+
+  it("refuses to open on a copy and on nothing at once", () => {
+    const parsed = parseDirective("[fork, new] go");
+    deepStrictEqual(parsed.directive, { settings: {} });
+    match(parsed.problem ?? "", /a session of its own twice over/);
+  });
+
+  it("leaves a bare word it does not know alone, group and all", () => {
+    for (const body of ["[newer] go", "[renew] go", "[new thread] go"]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {} }, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("says the same thing in the README as it does here", () => {
+    const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "README.md"), "utf8");
+    const block = /## Starting a review thread fresh[\s\S]*?```\n([\s\S]*?)```/.exec(readme)?.[1];
+    if (block === undefined) throw new Error("the README no longer lists the words under '## Starting a review thread fresh'");
+
+    const documented = block
+      .split(/\n|\s{2,}/)
+      .map((word) => word.trim())
+      .filter((word) => word !== "");
+    deepStrictEqual(new Set(documented), NEW_WORDS);
   });
 });
 

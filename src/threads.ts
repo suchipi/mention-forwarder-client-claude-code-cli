@@ -64,40 +64,57 @@ export function createThreads(deps: ThreadsDeps): Threads {
     };
   }
 
-  /** Gives the review thread a comment was written in a session of its own, or says why it cannot. */
-  async function fork(mention: Mention, key: string | undefined, parsed: Parsed): Promise<void> {
+  /**
+   * Gives the review thread a comment was written in a session of its own, or
+   * says why it cannot. `copy` is the whole difference between the two words
+   * that ask for one: `[fork]` opens it on the pull request's history, `[new]`
+   * opens it on nothing.
+   */
+  async function splitOff(mention: Mention, key: string | undefined, parsed: Parsed, copy: boolean): Promise<void> {
+    const word = copy ? "fork" : "new";
     if (key === undefined) {
       const unplaceable = isReviewComment(mention);
-      log.info(unplaceable ? "cannot tell which review thread this comment is in" : "nothing here to fork", {
+      log.info(unplaceable ? "cannot tell which review thread this comment is in" : "no review thread here to start", {
         kind: mention.kind,
         url: mention.url,
+        word,
       });
-      reply.append(mention.replyFile, unplaceable ? say.cannotFollowTheReviewThread() : say.nothingToForkHere());
+      reply.append(
+        mention.replyFile,
+        unplaceable ? say.cannotFollowTheReviewThread(word) : say.noReviewThreadHere(word),
+      );
       return;
     }
     if (split.has(key) || store.get(key) !== undefined) {
-      log.info("this review thread already has a session of its own", { key, url: mention.url });
-      reply.append(mention.replyFile, say.alreadyForkedNotice());
+      log.info("this review thread already has a session of its own", { key, url: mention.url, word });
+      reply.append(mention.replyFile, say.alreadyItsOwnNotice());
       return;
     }
 
-    const from = splitOf(mention);
+    const from = copy ? splitOf(mention) : undefined;
     const conversation = conversationFor(key, from);
-    // Written down before anything has run here, because the thread is forked from
-    // this moment whatever comes of it: this entry is what a second `[fork]` finds,
-    // and what sends the thread's later mentions here rather than to the pull request.
-    store.set(key, { cwd: options.cwd, settings: hasSettings(from.point.settings) ? from.point.settings : undefined });
+    // Written down before anything has run here, because the thread is its own
+    // from this moment whatever comes of it: this entry is what a second `[fork]`
+    // or `[new]` finds, and what sends the thread's later mentions here rather
+    // than to the pull request. `forked` goes with it so that a fork this process
+    // never got to run is split off its parent again rather than started blank.
+    store.set(key, {
+      cwd: options.cwd,
+      settings: from !== undefined && hasSettings(from.point.settings) ? from.point.settings : undefined,
+      forked: copy ? true : undefined,
+    });
     log.info("giving a review thread a session of its own", {
       key,
       url: mention.url,
-      forkedFrom: from.point.sessionId,
+      word,
+      copiedFrom: from?.point.sessionId,
     });
 
-    // A fork that worked says nothing for itself: whatever followed the group is
+    // One that worked says nothing for itself: whatever followed the group is
     // answered under the same comment, so a line saying so only lands on top of it.
-    // One that copied nothing is the exception, being the one way [fork] leaves
-    // the thread with something other than what it asked for.
-    if (from.point.sessionId === undefined) reply.append(mention.replyFile, say.forkedFromNothingNotice());
+    // A `[fork]` with nothing to copy is the exception, being the one way either
+    // word leaves the thread with something other than what it asked for.
+    if (copy && from?.point.sessionId === undefined) reply.append(mention.replyFile, say.forkedFromNothingNotice());
 
     const next = afterDirective(mention, parsed);
     if (next !== undefined) await conversation.handle(next);
@@ -109,7 +126,8 @@ export function createThreads(deps: ThreadsDeps): Threads {
       // Read before the mention is routed anywhere, because it is the one thing a
       // comment can say that is about which conversation should be answering it.
       const parsed = parseDirective(say.spokenText(mention));
-      if (parsed.directive.fork === true) return fork(mention, key, parsed);
+      if (parsed.directive.fork === true) return splitOff(mention, key, parsed, true);
+      if (parsed.directive.new === true) return splitOff(mention, key, parsed, false);
       if (key === undefined) return base.handle(mention);
 
       const running = split.get(key);
@@ -118,11 +136,12 @@ export function createThreads(deps: ThreadsDeps): Threads {
       const remembered = store.get(key);
       if (remembered === undefined) return base.handle(mention);
       // A process that ended took its conversations with it, and this entry is all
-      // that is left of one. An entry with no session is a thread that was forked
-      // and never got to run, which still wants the thread it was split off.
+      // that is left of one. An entry with no session is a thread that never got to
+      // run, and only a fork of one still wants the thread it was split off; a
+      // `[new]` thread asked for nothing behind it and is owed nothing.
       return conversationFor(
         key,
-        remembered.sessionId === undefined ? splitOf(mention) : undefined,
+        remembered.sessionId === undefined && remembered.forked === true ? splitOf(mention) : undefined,
       ).handle(mention);
     },
 

@@ -142,8 +142,8 @@ function heading(mention: Mention, key = mention.conversationKey): string {
 }
 
 /** The message that opens a session. Its first line becomes the session's name. */
-export function firstMessage(mention: Mention, body: string): string {
-  return `${heading(mention)}\n\n${FRAMING}\n\n${said(mention, body)}`;
+export function firstMessage(mention: Mention, body: string, key?: string): string {
+  return `${heading(mention, key)}\n\n${FRAMING}\n\n${said(mention, body)}`;
 }
 
 /**
@@ -435,21 +435,21 @@ export function forkedFromNothingNotice(): string {
 }
 
 /** Posted when a review thread that already has a session of its own is asked for another. */
-export function alreadyForkedNotice(): string {
-  return "This review thread already has a session of its own, so I cannot fork it again: everything written here since it was forked has gone to that session, and a second one would answer from here knowing only the half it had seen. Say what you want it to do and it carries on from where it is.";
+export function alreadyItsOwnNotice(): string {
+  return "This review thread already has a session of its own, so there is nothing to start: everything written here since has gone to that session, and a second one would answer from here knowing only the half it had seen. Write `[clear]` here to start the one it has over with nothing behind it.";
 }
 
-/** Posted when `[fork]` was written somewhere there is no review thread to give a session to. */
-export function nothingToForkHere(): string {
-  return "`[fork]` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was forked, and this comment is answered in the thread as it always was.";
+/** Posted when a group asking for a thread of its own was written where there is no review thread to give one to. */
+export function noReviewThreadHere(word: string): string {
+  return `\`[${word}]\` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was started, and this comment is answered in the thread as it always was.`;
 }
 
 /**
  * Posted when a review comment cannot be placed in its thread, which is every
  * one of them unless mention-forwarder is passing the webhook payload on.
  */
-export function cannotFollowTheReviewThread(): string {
-  return "I cannot tell which review thread this comment is in, so forking it would strand the new session at this one comment: only the webhook payload says which thread a review comment belongs to, and mention-forwarder passes it on only when `includeRawPayload` is on. Turn that on and `[fork]` works here.";
+export function cannotFollowTheReviewThread(word: string): string {
+  return `I cannot tell which review thread this comment is in, so \`[${word}]\` would strand the new session at this one comment: only the webhook payload says which thread a review comment belongs to, and mention-forwarder passes it on only when \`includeRawPayload\` is on. Turn that on and \`[${word}]\` works here.`;
 }
 
 /** Posted once a thread's history has been thrown away. */

@@ -1408,11 +1408,51 @@ describe("forking a review thread", () => {
     const refused = await session.waitFor(again);
     match(refused, /already has a session of its own/);
     ok(!refused.includes("stub answered"), `the second fork ran a turn: ${refused}`);
+
+    // [new] is refused there for the same reason, and points at the way to get
+    // what it was after.
+    const fresh = session.send("[new] start over", "e", at(203), review, inThread(203, 200));
+    match(await session.waitFor(fresh), /`\[clear\]` here to start the one it has over/);
     await session.end();
 
     // Read once the session is over, when nothing further can be written to it.
     const silent = existsSync(alone) ? readFileSync(alone, "utf8") : "";
     strictEqual(silent.trim(), "");
+  });
+
+  it("starts the thread on nothing when [new] asks for that instead", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const transcript = join(dir, "transcript.txt");
+    const argvFile = join(dir, "argv.json");
+    const session = onPullRequest(dir, ["--state-file", stateFile], {
+      CLAUDE_STUB_TRANSCRIPT: transcript,
+      CLAUDE_STUB_ARGV_FILE: argvFile,
+    });
+
+    await session.waitFor(session.send("what is this doing?", "a"));
+
+    const started = session.send("[new] read this file from the top", "b", at(200), review, inThread(200));
+    match(await session.waitFor(started, "stub answered"), /^stub answered turn 1/);
+    await session.end();
+
+    // The pull request has a session by now, and this one was not handed it.
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(!argv.some((arg) => arg.startsWith("--resume=")), `expected no resume in ${JSON.stringify(argv)}`);
+    ok(!argv.includes("--fork-session"), `expected no fork in ${JSON.stringify(argv)}`);
+
+    const remembered = conversations(stateFile);
+    strictEqual(remembered["github:acme/widgets#7"]?.sessionId, "11111111-2222-3333-4444-555555555555");
+    ok("github:acme/widgets#7#review:200" in remembered, "the review thread was not remembered as one of its own");
+
+    // Opened as any other empty session is, under the thread's own name: there is
+    // nothing above it to say it came from anywhere.
+    const opening = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .find((one) => one.includes("review:200"));
+    match(opening ?? "", /^\[github:acme\/widgets#7#review:200\] A test issue/);
+    match(opening ?? "", /posted back to that thread as a comment/);
+    doesNotMatch(opening ?? "", /everything above/);
   });
 
   it("says so when there was no session to copy into the new thread", async () => {

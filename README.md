@@ -298,7 +298,7 @@ Most of these are start-up flags, so changing one restarts the `claude` process 
 
 `progress` and `askTimeoutSeconds` are this program's own doing rather than the CLI's, so nothing has to be restarted for them. A group carrying only those is folded into the turn already running and takes hold there, which is what makes `[progress=all]` worth writing into a turn that has gone quiet: what it has said so far is posted the moment it is read, and the rest as it arrives.
 
-One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change a setting in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn), [`[exit]`](#ending-the-process) and [`[fork]`](#forking-a-review-thread), which are read wherever they appear.
+One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change a setting in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn), [`[exit]`](#ending-the-process), [`[fork]`](#forking-a-review-thread) and [`[new]`](#starting-a-review-thread-fresh), which are read wherever they appear.
 
 ## Steering a running turn
 
@@ -473,6 +473,7 @@ Every later mention in that thread runs there, group or no group, and its answer
 | With settings after it                                        | `[fork, model=opus] have a look` applies them to the new thread, leaving the pull request's own on whatever it was.                                                                    |
 | Before anything has run on the pull request                   | There is no history to copy, so the thread starts a session of its own knowing only what is written in it, and the bot says so.                                                       |
 | With `[stop]`, `[exit]`, `[clear]` or `[compact]`             | Refused rather than guessed at: forking is about a thread of its own, and those four are about the thread the comment was written in.                                                  |
+| Without the pull request's history behind it                  | [`[new]`](#starting-a-review-thread-fresh) is the same thread of its own, on a session that starts knowing nothing.                                                                    |
 
 **Two agents in one working directory.** A forked thread's `claude` runs in the same `cwd` as the thread it came out of, and neither knows the other is there — and on a busy pull request that is one directory between the pull request's own thread and every review thread forked off it. Each forked session is [told so](#what-the-agent-is-told), and told that the worktree in the history it inherited is not its own, which is a request and not a fence: where it matters, say it again in [your own standing instructions](#telling-it-something-of-your-own).
 
@@ -483,6 +484,27 @@ Every later mention in that thread runs there, group or no group, and its answer
 ```
 
 Without it a review comment cannot be placed in a thread at all, and `[fork]` says so rather than forking a thread it would then lose track of. Nothing else here reads the payload.
+
+## Starting a review thread fresh
+
+The same thing on a session that starts knowing nothing, rather than on a copy of the one the pull request is on, using this word:
+
+```
+new
+```
+
+```
+@my-bot [new]
+@my-bot [new] read this file from the top and say what it is for
+```
+
+`[new]` gives the review thread it is written in a session and a `claude` of its own, exactly as [`[fork]`](#forking-a-review-thread) does, and differs in one thing: that session opens on nothing. It has not read the pull request, knows nothing of what the bot has been asked there, and starts from what is written in this thread. Reach for it when the pull request's history is what you want rid of — a long thread the question has nothing to do with, or a second opinion on the same diff from something that has not already argued a position on it — and for `[fork]` when the work behind the pull request is the point.
+
+|                                             |                                                                                                                                                                     |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A thread that already has a session of its own | Nothing to do, and the bot says so, whichever word asked. `[clear]` in that thread starts the session it has over with nothing behind it, which is the same end by another road. |
+| `[fork]` in the same group                  | Refused rather than guessed at: one opens on a copy of the pull request's history and the other on nothing.                                                          |
+| Everything else                             | As [`[fork]`](#forking-a-review-thread): nothing posted when it works, the same refusals where it cannot, the same session kept across processes.                     |
 
 ## Settings
 

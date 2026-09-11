@@ -516,12 +516,17 @@ describe("what the thread sees", () => {
     match(say.forkedFromNothingNotice(), /starts knowing only what is written in it/);
   });
 
-  it("says why it will not fork a thread twice, or a comment that is not in one", () => {
-    match(say.alreadyForkedNotice(), /already has a session of its own/);
-    match(say.nothingToForkHere(), /only means something written in a review comment/);
-    match(say.cannotFollowTheReviewThread(), /cannot tell which review thread this comment is in/);
+  it("says why it will not give a thread a second session, or a comment that is in no thread one", () => {
+    match(say.alreadyItsOwnNotice(), /already has a session of its own/);
+    // The way to get what they were after, since the thread cannot be started twice.
+    match(say.alreadyItsOwnNotice(), /`\[clear\]`/);
+    // Named by the word that was written, since either can be refused here.
+    match(say.noReviewThreadHere("fork"), /`\[fork\]` gives one GitHub review thread/);
+    match(say.noReviewThreadHere("new"), /`\[new\]` gives one GitHub review thread/);
+    match(say.cannotFollowTheReviewThread("new"), /cannot tell which review thread this comment is in/);
+    match(say.cannotFollowTheReviewThread("new"), /`\[new\]` would strand the new session/);
     // The one thing somebody can do about it, named where they will read it.
-    match(say.cannotFollowTheReviewThread(), /`includeRawPayload`/);
+    match(say.cannotFollowTheReviewThread("fork"), /`includeRawPayload`/);
   });
 
   it("confirms a settings change", () => {

@@ -37,7 +37,8 @@ usual. Every setting the config file takes can be named there, apart from the
 ones the whole process is on, which say so rather than changing:
   ${PROCESS_ONLY_SETTINGS.join(", ")}
 A GitHub review comment may open with [fork] to give its review thread a session
-of its own, forked off the pull request's, which then runs beside it.
+of its own, forked off the pull request's, which then runs beside it, or with
+[new] for one that starts knowing nothing.
 
 Options:
   -c, --config <path>       Settings file. Flags win over it. Default, when it
