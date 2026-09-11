@@ -523,6 +523,10 @@ describe("what the thread sees", () => {
     // Named by the word that was written, since either can be refused here.
     match(say.noReviewThreadHere("fork"), /`\[fork\]` gives one GitHub review thread/);
     match(say.noReviewThreadHere("new"), /`\[new\]` gives one GitHub review thread/);
+    // The word for a thread of its own is offered only where it is the one wanted:
+    // there is a history to be rid of here, and nothing to fork it into.
+    match(say.noReviewThreadHere("new"), /write `\[clear\]`/);
+    doesNotMatch(say.noReviewThreadHere("fork"), /`\[clear\]`/);
     match(say.cannotFollowTheReviewThread("new"), /cannot tell which review thread this comment is in/);
     match(say.cannotFollowTheReviewThread("new"), /`\[new\]` would strand the new session/);
     // The one thing somebody can do about it, named where they will read it.

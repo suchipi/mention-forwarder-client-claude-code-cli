@@ -441,7 +441,11 @@ export function alreadyItsOwnNotice(): string {
 
 /** Posted when a group asking for a thread of its own was written where there is no review thread to give one to. */
 export function noReviewThreadHere(word: string): string {
-  return `\`[${word}]\` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was started, and this comment is answered in the thread as it always was.`;
+  const instead =
+    word === "new"
+      ? " To start this thread over with nothing behind it — including a history it was handed from the thread that opened this pull request — write `[clear]`."
+      : "";
+  return `\`[${word}]\` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was started, and this comment is answered in the thread as it always was.${instead}`;
 }
 
 /**

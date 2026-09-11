@@ -967,7 +967,7 @@ export function createConversation({
    * starts as a fork of that session, so that the work behind the pull request is
    * known here without anybody repeating it. So does a review thread somebody cut
    * out of the pull request it is on, which arrives already knowing which thread
-   * it splits and needs no url looked up.
+   * it splits and never has a url looked up for it.
    *
    * Forked rather than resumed, because both threads go on living: two of them
    * writing into one session would each find the other's turns in their history.
@@ -984,6 +984,11 @@ export function createConversation({
       carryOver(splitFrom.request, splitFrom.point, own, true);
       return;
     }
+    // The fork file answers for the thread whose url is written in it, and a
+    // review thread given a session of its own is under that url without being
+    // it: what it opens on was settled by the word that made it, and `[new]`
+    // asked for nothing.
+    if (key !== undefined) return;
     if (mention.url === "") return;
     const request = forks.parentOf(mention.url);
     if (request === undefined) return;

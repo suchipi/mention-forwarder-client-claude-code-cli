@@ -504,6 +504,8 @@ new
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A thread that already has a session of its own | Nothing to do, and the bot says so, whichever word asked. `[clear]` in that thread starts the session it has over with nothing behind it, which is the same end by another road. |
 | `[fork]` in the same group                  | Refused rather than guessed at: one opens on a copy of the pull request's history and the other on nothing.                                                          |
+| A pull request that is itself a fork        | Still nothing behind it. A pull request opened by [another thread](#threads-that-come-out-of-other-threads) hands its own thread that thread's history, and hands a `[new]` review thread on it none of it.                     |
+| Anywhere but a review comment               | Nothing to start, and the bot says so, along with the word that does start this thread over: `[clear]`. That is also how the pull request's own thread is rid of a history it came in with.                     |
 | Everything else                             | As [`[fork]`](#forking-a-review-thread): nothing posted when it works, the same refusals where it cannot, the same session kept across processes.                     |
 
 ## Settings
@@ -586,7 +588,7 @@ A thread that has [cleared its own history](#clearing-the-context) is never fork
 
 A review thread on a pull request can ask for the same thing from the thread itself, rather than being handed it on the way in: see [Forking a review thread](#forking-a-review-thread). It forks the same way, off the session the pull request is on, and is remembered under a key of its own beneath the pull request's.
 
-Urls are matched without their fragment, query or case, so a comment permalink (`…/pull/12#issuecomment-9`), a review comment (`…#discussion_r7`) and a file view (`…/pull/12/files`) all name the same pull request. Nothing prunes the file, and a line in it is only ever read for a conversation that has no session of its own yet.
+Urls are matched without their fragment, query or case, so a comment permalink (`…/pull/12#issuecomment-9`), a review comment (`…#discussion_r7`) and a file view (`…/pull/12/files`) all name the same pull request. Nothing prunes the file, and a line in it is only ever read for a conversation that has no session of its own yet. It is read for the conversation the url names and for no other: a review thread [given a session of its own](#forking-a-review-thread) is under that url without being it, and opens on what the word that made it asked for, which for [`[new]`](#starting-a-review-thread-fresh) is nothing.
 
 Forking goes through the same store as everything else, so the rules above hold: a session remembered for another working directory is not forked, and one that will no longer open leaves the new thread to start on its own instead of failing. `--no-state` turns this off along with the rest.
 

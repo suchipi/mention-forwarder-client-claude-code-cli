@@ -1455,6 +1455,72 @@ describe("forking a review thread", () => {
     doesNotMatch(opening ?? "", /everything above/);
   });
 
+  it("starts a [new] thread on nothing under a pull request that is itself a fork", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const forkFile = join(dir, "forks", "forks.jsonl");
+    const argvFile = join(dir, "argv.json");
+
+    const slack = start({
+      dir,
+      conversationKey: "slack:T0:C0:4.4",
+      args: ["--state-file", stateFile],
+    });
+    await slack.waitFor(slack.send("open the pull request", "a"));
+    await slack.end();
+
+    // Written here by hand, because the agent is what writes it in a real run.
+    writeFileSync(
+      forkFile,
+      `${JSON.stringify({ url: "https://github.com/acme/widgets/pull/7", from: "slack:T0:C0:4.4" })}\n`,
+    );
+
+    // The pull request's own thread opens on the work that made it. A review
+    // thread on it that asked for nothing behind it is owed none of that either.
+    const session = onPullRequest(dir, ["--state-file", stateFile], { CLAUDE_STUB_ARGV_FILE: argvFile });
+    await session.waitFor(
+      session.send("[new] read this file from the top", "b", at(200), review, inThread(200)),
+      "stub answered",
+    );
+    await session.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(!argv.includes("--fork-session"), `expected no fork in ${JSON.stringify(argv)}`);
+    ok(!argv.some((arg) => arg.startsWith("--resume=")), `expected no resume in ${JSON.stringify(argv)}`);
+  });
+
+  it("forks the work behind a pull request that is itself a fork", async () => {
+    const dir = workspace();
+    const stateFile = join(dir, "sessions.json");
+    const forkFile = join(dir, "forks", "forks.jsonl");
+    const argvFile = join(dir, "argv.json");
+
+    const slack = start({ dir, conversationKey: "slack:T0:C0:5.5", args: ["--state-file", stateFile] });
+    await slack.waitFor(slack.send("open the pull request", "a"));
+    await slack.end();
+
+    writeFileSync(
+      forkFile,
+      `${JSON.stringify({ url: "https://github.com/acme/widgets/pull/7", from: "slack:T0:C0:5.5" })}\n`,
+    );
+
+    // Nothing has run on the pull request, so what is behind it is the thread that
+    // opened it, and the fork reaches that through the pull request's own thread.
+    const session = onPullRequest(dir, ["--state-file", stateFile], { CLAUDE_STUB_ARGV_FILE: argvFile });
+    await session.waitFor(
+      session.send("[fork] have a look", "b", at(200), review, inThread(200)),
+      "stub answered",
+    );
+    await session.end();
+
+    const argv = JSON.parse(readFileSync(argvFile, "utf8")) as string[];
+    ok(argv.includes("--fork-session"), `expected a fork in ${JSON.stringify(argv)}`);
+    ok(
+      argv.includes("--resume=11111111-2222-3333-4444-555555555555"),
+      `expected the slack thread's session in ${JSON.stringify(argv)}`,
+    );
+  });
+
   it("says so when there was no session to copy into the new thread", async () => {
     const dir = workspace();
     const session = onPullRequest(dir, ["--no-state"]);
