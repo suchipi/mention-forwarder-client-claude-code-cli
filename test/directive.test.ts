@@ -155,6 +155,23 @@ describe("the [interrupt] word", () => {
     }
   });
 
+  it("reads a message of nothing but the CLI's own word for one as that word", () => {
+    for (const body of ["/clear", "/CLEAR", "  /clear  "]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {}, clear: true }, body);
+      strictEqual(parseDirective(body).rest, "");
+    }
+    for (const body of ["/compact", "/Compact"]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {}, compact: true }, body);
+    }
+  });
+
+  it("leaves a slash with anything else on the line to the agent, which is whose language it is", () => {
+    for (const body of ["/clear this up for me", "please /clear", "/clearing", "/review", "//clear"]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {} }, body);
+      strictEqual(parseDirective(body).rest, body.trim(), body);
+    }
+  });
+
   it("says the same thing in the README as it does here", () => {
     // People stop a turn by copying a word out of that list, so a word only one
     // of the two knows about is a bug either way round.

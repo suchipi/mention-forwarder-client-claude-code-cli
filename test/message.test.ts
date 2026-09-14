@@ -516,6 +516,14 @@ describe("what the thread sees", () => {
     match(say.forkedFromNothingNotice(), /starts knowing only what is written in it/);
   });
 
+  it("tells the agent what became of the request nobody answered", () => {
+    match(say.askOvertaken(true), /Nobody answered this/);
+    match(say.askOvertaken(true), /thrown away/);
+    match(say.askOvertaken(false), /summarized in place/);
+    // What it should do about it, which is the point of telling it at all.
+    match(say.askOvertaken(true), /finish up rather than starting anything new/);
+  });
+
   it("says why it will not give a thread a second session, or a comment that is in no thread one", () => {
     match(say.alreadyItsOwnNotice(), /already has a session of its own/);
     // The way to get what they were after, since the thread cannot be started twice.
@@ -523,9 +531,9 @@ describe("what the thread sees", () => {
     // Named by the word that was written, since either can be refused here.
     match(say.noReviewThreadHere("fork"), /`\[fork\]` gives one GitHub review thread/);
     match(say.noReviewThreadHere("new"), /`\[new\]` gives one GitHub review thread/);
-    // The word for a thread of its own is offered only where it is the one wanted:
-    // there is a history to be rid of here, and nothing to fork it into.
-    match(say.noReviewThreadHere("new"), /write `\[clear\]`/);
+    // Nobody is sent to `[clear]` from here: `[new]` written where there is no
+    // review thread is taken as one rather than turned down.
+    doesNotMatch(say.noReviewThreadHere("new"), /`\[clear\]`/);
     doesNotMatch(say.noReviewThreadHere("fork"), /`\[clear\]`/);
     match(say.cannotFollowTheReviewThread("new"), /cannot tell which review thread this comment is in/);
     match(say.cannotFollowTheReviewThread("new"), /`\[new\]` would strand the new session/);

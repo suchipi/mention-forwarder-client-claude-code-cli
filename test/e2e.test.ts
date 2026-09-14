@@ -487,6 +487,48 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("reads a clear written while the agent is waiting on a permission request", async () => {
+    const dir = workspace();
+    const transcript = join(dir, "transcript.txt");
+    const session = start({
+      dir,
+      scenario: "ask",
+      args: ["--no-state"],
+      env: { CLAUDE_STUB_TRANSCRIPT: transcript },
+    });
+
+    const asked = session.send("write the file", "a");
+    await session.waitFor(asked, "needs permission");
+
+    // The request is refused rather than left for a comment that has been spent
+    // on the group: nothing but the next comment can answer one, and this is it.
+    const cleared = session.send("[clear] do such-and-such", "b");
+    match(await session.waitFor(asked, "stub was told"), /history to be thrown away/);
+    await session.waitFor(cleared, "Cleared this thread's context");
+    await session.waitFor(cleared, "needs permission");
+    await session.end();
+
+    const turns = readFileSync(transcript, "utf8")
+      .split("\n---\n")
+      .filter((one) => one.trim() !== "");
+    strictEqual(turns.length, 2);
+    match(turns[1] ?? "", /do such-and-such/);
+  });
+
+  it("takes a message of nothing but /clear or /compact as the group of that name", async () => {
+    const dir = workspace();
+    const session = start({ dir, args: ["--no-state"] });
+
+    await session.waitFor(session.send("first", "a"));
+    match(await session.waitFor(session.send("/compact", "b"), "Compacted"), /summary of itself/);
+    match(await session.waitFor(session.send("/clear", "c"), "Cleared"), /starts out knowing nothing/);
+
+    // Only when that is the whole of it: anywhere else the slash is the agent's
+    // language rather than this program's, and goes to it as written.
+    match(await session.waitFor(session.send("/clear up what this does", "d"), "stub answered"), /clear up what this does/);
+    await session.end();
+  });
+
   it("does not fork into a thread that has cleared its history", async () => {
     const dir = workspace();
     const stateFile = join(dir, "sessions.json");
@@ -1409,10 +1451,11 @@ describe("forking a review thread", () => {
     match(refused, /already has a session of its own/);
     ok(!refused.includes("stub answered"), `the second fork ran a turn: ${refused}`);
 
-    // [new] is refused there for the same reason, and points at the way to get
-    // what it was after.
+    // [new] is not refused there: the session it asked for exists, and starting
+    // it over with nothing behind it is the one thing left for the word to mean.
     const fresh = session.send("[new] start over", "e", at(203), review, inThread(203, 200));
-    match(await session.waitFor(fresh), /`\[clear\]` here to start the one it has over/);
+    match(await session.waitFor(fresh, "stub answered"), /Cleared this thread's context/);
+    match(readFileSync(fresh, "utf8"), /start over/);
     await session.end();
 
     // Read once the session is over, when nothing further can be written to it.
@@ -1549,6 +1592,22 @@ describe("forking a review thread", () => {
     const said = await session.waitFor(unplaceable);
     match(said, /cannot tell which review thread this comment is in/);
     match(said, /includeRawPayload/);
+    await session.end();
+  });
+
+  it("takes [new] where there is no review thread as a clear of the thread it was written in", async () => {
+    const dir = workspace();
+    const session = onPullRequest(dir, ["--no-state"]);
+
+    await session.waitFor(session.send("what is this doing?", "a"));
+    const fresh = session.send("[new] start over", "b");
+    await session.waitFor(fresh, "Cleared this thread's context");
+    match(await session.waitFor(fresh, "stub answered"), /start over/);
+
+    // A review comment that cannot be placed is turned down all the same: the
+    // thread it asks about is real, and not the one a clear here would empty.
+    const unplaceable = await session.waitFor(session.send("[new] start over", "c", at(200), review));
+    match(unplaceable, /cannot tell which review thread this comment is in/);
     await session.end();
   });
 

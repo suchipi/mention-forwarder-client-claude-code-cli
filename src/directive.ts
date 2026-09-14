@@ -49,6 +49,7 @@ export type Parsed = {
 };
 
 const GROUP = /^\[([^\]\n]*)\]/;
+const SLASH = /^\/([a-z]+)$/i;
 
 function nothing(rest: string, problem?: string): Parsed {
   return problem === undefined
@@ -58,6 +59,12 @@ function nothing(rest: string, problem?: string): Parsed {
 
 /**
  * Reads a `[setting=..., interrupt, exit, clear, compact, fork, new]` group off the front of a mention.
+ *
+ * A message that is nothing but `/clear` or `/compact` is read as the group of
+ * the same name, because those are the words Claude Code itself takes for the
+ * two, and somebody who types one into a thread means it. Nothing follows one:
+ * a line with anything else on it is a person's words about the command rather
+ * than the command.
  *
  * A setting is named as the config file names it, and every setting in that file
  * can be written here, so a thread can be put on anything the process was started
@@ -71,6 +78,14 @@ function nothing(rest: string, problem?: string): Parsed {
  */
 export function parseDirective(body: string): Parsed {
   const text = body.trim();
+  const slash = SLASH.exec(text);
+  if (slash !== null) {
+    const word = (slash[1] ?? "").toLowerCase();
+    if (CLEAR_WORDS.has(word)) return { directive: { settings: {}, clear: true }, rest: "" };
+    if (COMPACT_WORDS.has(word)) return { directive: { settings: {}, compact: true }, rest: "" };
+    return nothing(text);
+  }
+
   const match = GROUP.exec(text);
   if (match === null) return nothing(text);
 

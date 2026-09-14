@@ -441,11 +441,7 @@ export function alreadyItsOwnNotice(): string {
 
 /** Posted when a group asking for a thread of its own was written where there is no review thread to give one to. */
 export function noReviewThreadHere(word: string): string {
-  const instead =
-    word === "new"
-      ? " To start this thread over with nothing behind it — including a history it was handed from the thread that opened this pull request — write `[clear]`."
-      : "";
-  return `\`[${word}]\` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was started, and this comment is answered in the thread as it always was.${instead}`;
+  return `\`[${word}]\` gives one GitHub review thread a session of its own, so it only means something written in a review comment. Nothing was started, and this comment is answered in the thread as it always was.`;
 }
 
 /**
@@ -454,6 +450,17 @@ export function noReviewThreadHere(word: string): string {
  */
 export function cannotFollowTheReviewThread(word: string): string {
   return `I cannot tell which review thread this comment is in, so \`[${word}]\` would strand the new session at this one comment: only the webhook payload says which thread a review comment belongs to, and mention-forwarder passes it on only when \`includeRawPayload\` is on. Turn that on and \`[${word}]\` works here.`;
+}
+
+/**
+ * Sent to the agent in place of an answer, when the comment that would have
+ * answered its request asked for the thread's history instead. It says what
+ * becomes of the work as well as that nobody answered, because a turn whose
+ * history is about to go is better off finishing than starting something.
+ */
+export function askOvertaken(clearing: boolean): string {
+  const fate = clearing ? "thrown away" : "summarized in place";
+  return `Nobody answered this: the next comment in the thread asked for this thread's history to be ${fate} instead, and only that comment could have answered. That happens once this turn is over, so finish up rather than starting anything new.`;
 }
 
 /** Posted once a thread's history has been thrown away. */

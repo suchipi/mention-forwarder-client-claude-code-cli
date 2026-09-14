@@ -38,7 +38,9 @@ ones the whole process is on, which say so rather than changing:
   ${PROCESS_ONLY_SETTINGS.join(", ")}
 A GitHub review comment may open with [fork] to give its review thread a session
 of its own, forked off the pull request's, which then runs beside it, or with
-[new] for one that starts knowing nothing.
+[new] for one that starts knowing nothing; written where there is no review
+thread, [new] clears the thread it was written in instead. A mention of nothing
+but /clear or /compact means [clear] or [compact].
 
 Options:
   -c, --config <path>       Settings file. Flags win over it. Default, when it

@@ -69,11 +69,20 @@ export function createThreads(deps: ThreadsDeps): Threads {
    * says why it cannot. `copy` is the whole difference between the two words
    * that ask for one: `[fork]` opens it on the pull request's history, `[new]`
    * opens it on nothing.
+   *
+   * Where there is nothing to give one to, `[new]` is a clear rather than a
+   * refusal, a session that starts knowing nothing being what both words mean.
    */
   async function splitOff(mention: Mention, key: string | undefined, parsed: Parsed, copy: boolean): Promise<void> {
     const word = copy ? "fork" : "new";
     if (key === undefined) {
       const unplaceable = isReviewComment(mention);
+      // Written where there is no review thread at all, `[new]` is asking for
+      // the one thing `[clear]` gives the thread it was written in, so it is
+      // taken as that rather than turned down. A review comment this cannot
+      // place is not that case: the thread it names is real and answers
+      // elsewhere, so clearing would throw away a history nobody asked about.
+      if (!copy && !unplaceable) return clearInstead(mention, parsed, key);
       log.info(unplaceable ? "cannot tell which review thread this comment is in" : "no review thread here to start", {
         kind: mention.kind,
         url: mention.url,
@@ -86,6 +95,9 @@ export function createThreads(deps: ThreadsDeps): Threads {
       return;
     }
     if (split.has(key) || store.get(key) !== undefined) {
+      // The thread has the session of its own it was asking for, so what is
+      // left of `[new]` is that it start over knowing nothing: a clear.
+      if (!copy) return clearInstead(mention, parsed, key);
       log.info("this review thread already has a session of its own", { key, url: mention.url, word });
       reply.append(mention.replyFile, say.alreadyItsOwnNotice());
       return;
@@ -120,6 +132,37 @@ export function createThreads(deps: ThreadsDeps): Threads {
     if (next !== undefined) await conversation.handle(next);
   }
 
+  /** The same comment with the word that asked for a thread of its own spent on a clear of the thread it is in. */
+  function clearInstead(mention: Mention, parsed: Parsed, key: string | undefined): Promise<void> {
+    log.info("taking [new] as a clear of the thread it was written in", { key, url: mention.url });
+    const next = afterDirective(mention, {
+      ...parsed,
+      directive: { ...parsed.directive, new: false, clear: true },
+    });
+    // A group carrying `clear` is never empty, so `afterDirective` always has
+    // one to give; routed rather than handled so the word cannot be read twice.
+    return route(next ?? mention, key);
+  }
+
+  /** Hands a comment to the conversation that answers its thread, which for most of them is the one this process was started for. */
+  function route(mention: Mention, key: string | undefined): Promise<void> {
+    if (key === undefined) return base.handle(mention);
+
+    const running = split.get(key);
+    if (running !== undefined) return running.handle(mention);
+
+    const remembered = store.get(key);
+    if (remembered === undefined) return base.handle(mention);
+    // A process that ended took its conversations with it, and this entry is all
+    // that is left of one. An entry with no session is a thread that never got to
+    // run, and only a fork of one still wants the thread it was split off; a
+    // `[new]` thread asked for nothing behind it and is owed nothing.
+    return conversationFor(
+      key,
+      remembered.sessionId === undefined && remembered.forked === true ? splitOf(mention) : undefined,
+    ).handle(mention);
+  }
+
   return {
     async handle(mention) {
       const key = reviewThreadKey(mention);
@@ -128,21 +171,7 @@ export function createThreads(deps: ThreadsDeps): Threads {
       const parsed = parseDirective(say.spokenText(mention));
       if (parsed.directive.fork === true) return splitOff(mention, key, parsed, true);
       if (parsed.directive.new === true) return splitOff(mention, key, parsed, false);
-      if (key === undefined) return base.handle(mention);
-
-      const running = split.get(key);
-      if (running !== undefined) return running.handle(mention);
-
-      const remembered = store.get(key);
-      if (remembered === undefined) return base.handle(mention);
-      // A process that ended took its conversations with it, and this entry is all
-      // that is left of one. An entry with no session is a thread that never got to
-      // run, and only a fork of one still wants the thread it was split off; a
-      // `[new]` thread asked for nothing behind it and is owed nothing.
-      return conversationFor(
-        key,
-        remembered.sessionId === undefined && remembered.forked === true ? splitOf(mention) : undefined,
-      ).handle(mention);
+      return route(mention, key);
     },
 
     snapshots() {

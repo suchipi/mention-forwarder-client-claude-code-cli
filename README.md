@@ -11,7 +11,7 @@ Linear  ──┘           ▲                                      ◀──�
                       └─────────────── reply file ───────────┘
 ```
 
-One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model, reasoning effort, or any other setting the config file takes, by opening a mention with a group like `[model=opus, effort=max]`, a comment written while the agent is working reaches the turn it is working on, a turn already running can be called off with `[stop]`, and a thread's history can be thrown away with `[clear]` or summarized in place with `[compact]`.
+One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model, reasoning effort, or any other setting the config file takes, by opening a mention with a group like `[model=opus, effort=max]`, a comment written while the agent is working reaches the turn it is working on, a turn already running can be called off with `[stop]`, and a thread's history can be thrown away with `[clear]` (or a mention of nothing but `/clear`) or summarized in place with `[compact]`.
 
 | mention-forwarder                  | this program                                | Claude Code                            |
 | ---------------------------------- | ------------------------------------------- | -------------------------------------- |
@@ -298,7 +298,7 @@ Most of these are start-up flags, so changing one restarts the `claude` process 
 
 `progress` and `askTimeoutSeconds` are this program's own doing rather than the CLI's, so nothing has to be restarted for them. A group carrying only those is folded into the turn already running and takes hold there, which is what makes `[progress=all]` worth writing into a turn that has gone quiet: what it has said so far is posted the moment it is read, and the rest as it arrives.
 
-One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change a setting in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn), [`[exit]`](#ending-the-process), [`[fork]`](#forking-a-review-thread) and [`[new]`](#starting-a-review-thread-fresh), which are read wherever they appear.
+One case where a group is not read: while the agent is waiting on a permission request or a question, the next mention is that answer, so it is handed over as written rather than scanned for settings. Change a setting in a mention that starts a turn. The exceptions are [`[stop]`](#stopping-a-turn), [`[exit]`](#ending-the-process), [`[fork]`](#forking-a-review-thread), [`[new]`](#starting-a-review-thread-fresh), [`[clear]`](#clearing-the-context) and [`[compact]`](#compacting-the-context), which are read wherever they appear — the last two by refusing the request first, since nothing else can answer it once that comment has been read as a group.
 
 ## Steering a running turn
 
@@ -329,6 +329,7 @@ That notice is all the steering comment gets, and it is posted only when there i
 | With `[progress=...]` or `[askTimeoutSeconds=...]`            | Taken on at once and folded into this turn, since neither is a flag `claude` was started with.                        |
 | With `[stop]` or `[exit]`                                     | Stops the turn or ends the process, as it does anywhere else.                                                         |
 | With `[clear]` or `[compact]`                                 | Waits and runs as a turn of its own, because both are about the history this turn is still writing.                   |
+| With `[new]` where there is no review thread                  | Taken as `[clear]`, and waits the same way. See [starting a review thread fresh](#starting-a-review-thread-fresh).    |
 | With `[fork]`                                                 | [Forks](#forking-a-review-thread) the review thread it was written in and runs there, leaving this turn to carry on.  |
 | While the process is starting again after a settings change   | Waits and runs as its own turn, rather than being written to a process that cannot take it.                           |
 
@@ -394,16 +395,17 @@ clear
 ```
 @my-bot [clear]
 @my-bot [clear] read the pull request again from the top
+@my-bot /clear
 ```
 
-This is `/clear`. The `claude` process ends and the session is forgotten, so the next mention here opens one of its own that starts out knowing nothing of what was said before it: not this thread's earlier turns, and not [the thread it came out of](#threads-that-come-out-of-other-threads). Anything the agent wrote to disk it wrote to disk; this is the conversation and nothing else. The thread's model and effort are not history and stay as they are.
+This is `/clear`, and a mention that is nothing else but `/clear` is read as one. The `claude` process ends and the session is forgotten, so the next mention here opens one of its own that starts out knowing nothing of what was said before it: not this thread's earlier turns, and not [the thread it came out of](#threads-that-come-out-of-other-threads). Anything the agent wrote to disk it wrote to disk; this is the conversation and nothing else. The thread's model and effort are not history and stay as they are.
 
 Reach for this when a thread has gone somewhere you would rather it forgot, or when it has drifted far enough that starting over beats explaining. Reach for [`[compact]`](#compacting-the-context) when the history is worth keeping and only its size is the problem.
 
 |                                                               |                                                                                                                                                                       |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | While a turn is running                                       | It waits for that turn to finish rather than joining it, and takes its place behind anything already waiting for a turn of its own.                                   |
-| While a turn is waiting on a permission request or a question | That comment is [the answer](#how-to-answer) instead. Only `[stop]` and `[exit]` are read while something is waiting.                                                  |
+| While a turn is waiting on a permission request or a question | Read all the same, rather than being taken as the answer: the request is refused, since the comment that could have answered it asked for this instead, and the clear then waits for the turn to end as it does above. |
 | While nothing has run in the thread yet                       | Nothing to clear, and the bot says so.                                                                                                                                |
 | With an instruction after it                                  | It runs as the next turn, in the new session, and is what that session opens with.                                                                                    |
 | With settings after it                                        | `[clear, model=opus] start again` applies both, and says both.                                                                                                        |
@@ -420,9 +422,10 @@ compact
 ```
 @my-bot [compact]
 @my-bot [compact] now go on to the tests
+@my-bot /compact
 ```
 
-This is `/compact`. Claude Code summarizes the session so far and carries on from that summary, in the same session, so the thread keeps its place and its id. No turn is run, so what the thread gets back is what became of its history:
+This is `/compact`, and a mention that is nothing else but `/compact` is read as one. Claude Code summarizes the session so far and carries on from that summary, in the same session, so the thread keeps its place and its id. No turn is run, so what the thread gets back is what became of its history:
 
 > Compacted this thread's context: everything said here so far is a summary of itself now, and the thread carries on from that. 29,169 tokens of it became 1,193.
 
@@ -431,7 +434,7 @@ A session that fills up is compacted by Claude Code on its own, without being as
 |                                                               |                                                                                                                                        |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | While a turn is running                                       | It waits for that turn to finish, as `[clear]` does, so it summarizes the whole of what has been said and not part of it.              |
-| While a turn is waiting on a permission request or a question | That comment is [the answer](#how-to-answer) instead.                                                                                  |
+| While a turn is waiting on a permission request or a question | Read all the same, as `[clear]` is: the request is refused and the compaction waits for the turn to end.                               |
 | While the process is not running                              | It is started on the thread's own session and compacts that, since compacting is something you ask for before the next turn, not after. |
 | While nothing has run in the thread yet                       | Nothing to compact, and the bot says so.                                                                                               |
 | When there is too little of it to be worth summarizing        | Claude Code refuses, and the thread is told what it said: `Not enough messages to compact.`                                            |
@@ -502,10 +505,11 @@ new
 
 |                                             |                                                                                                                                                                     |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A thread that already has a session of its own | Nothing to do, and the bot says so, whichever word asked. `[clear]` in that thread starts the session it has over with nothing behind it, which is the same end by another road. |
+| A thread that already has a session of its own | `[fork]` has nothing to do and says so. `[new]` still has: the session it asked for is there, and starting it over with nothing behind it is what [`[clear]`](#clearing-the-context) does, so that is what it does. |
 | `[fork]` in the same group                  | Refused rather than guessed at: one opens on a copy of the pull request's history and the other on nothing.                                                          |
 | A pull request that is itself a fork        | Still nothing behind it. A pull request opened by [another thread](#threads-that-come-out-of-other-threads) hands its own thread that thread's history, and hands a `[new]` review thread on it none of it.                     |
-| Anywhere but a review comment               | Nothing to start, and the bot says so, along with the word that does start this thread over: `[clear]`. That is also how the pull request's own thread is rid of a history it came in with.                     |
+| Anywhere but a review comment               | There is no review thread to give one to and one thing left to mean, so `[new]` is taken as [`[clear]`](#clearing-the-context) of the thread it was written in: a Slack thread, a GitHub issue, a pull request conversation. That is also how a thread is rid of a history it came in with. |
+| A review comment this cannot place          | Turned down rather than cleared. [Which thread it is in](#forking-a-review-thread) is the only thing missing, and the thread it names is not the one a clear here would empty. |
 | Everything else                             | As [`[fork]`](#forking-a-review-thread): nothing posted when it works, the same refusals where it cannot, the same session kept across processes.                     |
 
 ## Settings

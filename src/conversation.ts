@@ -1151,11 +1151,25 @@ export function createConversation({
       }
 
       if (parked !== undefined) {
-        log.info("this mention answers what the agent was waiting on", {
+        // A group about the thread's history is not an answer, and the ask
+        // cannot be left for a later comment: only the next one can answer an
+        // ask, and this is it. Refused here, the group then waits for the turn
+        // as clearing and compacting do while one is running anyway.
+        if (parsed.directive.clear !== true && parsed.directive.compact !== true) {
+          log.info("this mention answers what the agent was waiting on", {
+            id: mention.id,
+          });
+          answerWith(mention, say.spokenText(mention));
+          return;
+        }
+        log.info("a group about the thread's history came in place of an answer", {
           id: mention.id,
+          tool: parked.ask.tool.name,
         });
-        answerWith(mention, say.spokenText(mention));
-        return;
+        settle(parked.ask, {
+          behavior: "deny",
+          message: say.askOvertaken(parsed.directive.clear === true),
+        });
       }
 
       if (turn !== undefined) {
