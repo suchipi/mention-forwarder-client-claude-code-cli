@@ -401,7 +401,7 @@ export function steeredNotice(
   if (reviewThreadKey(steerer) === undefined) return notice;
   return `${notice}
 
-Open a comment here with \`[fork]\` to give this review thread a session of its own, running beside the pull request rather than behind it.`;
+Open a comment here with \`[fork]\` or \`[new]\` to give this review thread a session of its own, running beside the pull request rather than behind it.`;
 }
 
 /** Posted once a turn somebody called off has actually stopped. */

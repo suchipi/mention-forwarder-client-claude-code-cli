@@ -314,9 +314,9 @@ Where that leaves the steering comment out of sight of the answer — another Gi
 
 > The agent is already working on an earlier comment, so it picked this up as part of that. Its reply lands there rather than here: https://github.com/acme/widgets/pull/7#discussion_r100
 >
-> Open a comment here with `[fork]` to give this review thread a session of its own, running beside the pull request rather than behind it.
+> Open a comment here with `[fork]` or `[new]` to give this review thread a session of its own, running beside the pull request rather than behind it.
 
-The second half is offered to a GitHub review thread and nowhere else, since [forking](#forking-a-review-thread) is a thing only a review thread can ask for — and waiting on a turn that started somewhere else is what it is for, which is worth saying where somebody is watching it happen.
+The second half is offered to a GitHub review thread and nowhere else, since [forking](#forking-a-review-thread) and [starting fresh](#starting-a-review-thread-fresh) are things only a review thread can ask for — and waiting on a turn that started somewhere else is what either is for, which is worth saying where somebody is watching it happen.
 
 That notice is all the steering comment gets, and it is posted only when there is somewhere else to point at. A Slack thread, a GitHub issue or pull request conversation, and a commit are each answered as a whole, so a comment steered into a turn in one of those is already in the thread the answer is coming to: nothing is posted there, and the answer arriving is what shows it landed. So is a GitHub review comment steered into a turn that started in the same review thread — an answer to a review comment is posted as a reply in the thread that comment is in, which is the thread this one is reading — as long as [the payload](#forking-a-review-thread) says which thread they are both in. Where it does not, the pointer is posted anyway.
 
