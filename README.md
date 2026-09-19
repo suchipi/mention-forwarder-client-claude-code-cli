@@ -101,10 +101,6 @@ Anything on `run.sh`'s own command line is passed to this client, which is how y
 | `SIM_PORT`              | The simulator's port. Default `4000`.                                                                                                            |
 | `WEB_PORT`              | The [web view](#seeing-what-is-running)'s port. Default `4100`; `0` for none. Read when the config is first written.                              |
 
-### Or keep it running as a service
-
-On macOS, [`launchd/`](./launchd) has a job that keeps `run.sh` up across logins and restarts it if it dies, with the commands for restarting and stopping it. See [launchd/README.md](./launchd/README.md).
-
 ## What the agent is told
 
 The first mention of a conversation opens the session with the whole context:
