@@ -605,9 +605,10 @@ One row per conversation — a process that is running a [forked review thread](
 | Shown                                     | Read as                                                                                                                              |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `RUNNING`, `WAITING`, `IDLE`              | A turn is under way; a turn has stopped for a [permission request or a question](#approvals-and-questions); nothing is running.       |
-| The title, linked                         | The issue or PR title, or the Slack channel. The link is the comment that most recently mentioned the bot there.                      |
+| The title, linked                         | The issue or PR title, or the Slack channel and the moment that thread started. The link is the comment that most recently mentioned the bot there. |
 | `Working for 2m 14s, steered 1×`          | How long this turn has been going, and how many comments were [steered](#steering-a-running-turn) into it.                            |
 | `Waiting on Bash for 40s`                 | Which tool, or a question it asked, and how long it has been waiting for somebody to answer in the thread.                            |
+| What it was last asked                    | The words of the mention that most recently reached it, on one line and cut short.                                                    |
 | The model and effort                      | The thread's own, including whatever a [`[model=...]` group](#settings-a-thread-can-change) has changed them to.                      |
 | `3 turns of 5 mentions`, `1 queued`       | What this process has done since it started, and how many mentions are waiting for a turn of their own.                               |
 | The working directory, and the session id | The checkout the agent is working in, and the first characters of the Claude Code session, which is enough to find it under `~/.claude/projects`. |

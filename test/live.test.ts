@@ -34,6 +34,8 @@ function snapshot(over: Partial<ConversationSnapshot> = {}): ConversationSnapsho
     thread: {
       platform: "github",
       title: "A test issue",
+      startedAt: undefined,
+      asked: "please fix the flaky test",
       url: "https://example.com/issues/7#c1",
       author: "suchipi",
       receivedAt: "2026-08-22T00:00:00.000Z",

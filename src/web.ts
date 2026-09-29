@@ -325,6 +325,29 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+
+/**
+ * What to call a conversation. Every slack thread in a channel arrives titled
+ * with that channel's id, so the moment the thread started is said alongside it:
+ * without that, a busy channel is a column of rows that all read alike.
+ */
+function name(one) {
+  const thread = one.thread || {};
+  const title = thread.title || one.conversationKey || "a conversation";
+  const started = thread.startedAt ? day(thread.startedAt) : "";
+  return started ? title + " \u00b7 " + started : title;
+}
+
+function day(iso) {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return "";
+  return new Date(parsed).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 `;
 
 const PAGE = `<!doctype html>
@@ -345,6 +368,14 @@ const PAGE = `<!doctype html>
   .top { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
   .title { font-weight: 600; font-size: 1rem; }
   .doing { margin: .5rem 0 0; }
+  .asked {
+    margin: .45rem 0 0;
+    padding-left: .6rem;
+    border-left: 2px solid var(--line);
+    color: var(--dim);
+    font-size: .85rem;
+    overflow-wrap: anywhere;
+  }
 </style>
 </head>
 <body>
@@ -367,11 +398,6 @@ function since(iso) {
   if (minutes < 60) return minutes + "m " + (seconds % 60) + "s";
   const hours = Math.floor(minutes / 60);
   return hours + "h " + (minutes % 60) + "m";
-}
-
-function name(one) {
-  const thread = one.thread || {};
-  return thread.title || one.conversationKey || "a conversation";
 }
 
 function doing(one) {
@@ -405,6 +431,7 @@ function card(one) {
   item.append(top);
 
   item.append(element("p", "doing", doing(one)));
+  if (one.thread && one.thread.asked) item.append(element("p", "asked", one.thread.asked));
 
   const meta = element("p", "meta");
   const bits = [];
@@ -588,18 +615,18 @@ function moment(one) {
 }
 
 function describe(one) {
-  const name = (one.thread && one.thread.title) || one.conversationKey || "a session";
-  document.title = name;
+  const called = name(one);
+  document.title = called;
 
   title.replaceChildren(element("span", "badge " + one.state, one.state));
   if (one.thread && one.thread.url) {
-    const link = element("a", null, name);
+    const link = element("a", null, called);
     link.href = one.thread.url;
     link.target = "_blank";
     link.rel = "noreferrer";
     title.append(link);
   } else {
-    title.append(element("span", null, name));
+    title.append(element("span", null, called));
   }
 
   const bits = [one.cwd, "session " + sessionId];

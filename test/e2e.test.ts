@@ -1323,6 +1323,7 @@ describe("driving the claude CLI", () => {
       strictEqual(one.thread?.title, "A test issue");
       strictEqual(one.thread?.url, "https://example.com/issues/1#c1");
       strictEqual(one.thread?.platform, "github");
+      strictEqual(one.thread?.asked, "hello");
       strictEqual(one.cwd, dir);
       strictEqual(one.state, "idle");
       strictEqual(one.mentions, 1);

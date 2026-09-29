@@ -54,11 +54,38 @@ export type Thread = {
   platform: string;
   /** Issue or PR title, or the Slack channel id. Empty when the platform offers none. */
   title: string;
+  /** When the thread itself began, where the key it is remembered by says so. */
+  startedAt: string | undefined;
+  /** The last thing asked of it, on one line. */
+  asked: string;
   /** Permalink to the comment or message that did the mentioning. */
   url: string;
   author: string;
   receivedAt: string;
 };
+
+/** How much of what was asked is kept: a line of a list, rather than the whole comment. */
+const ASKED_CHARS = 200;
+
+/** What somebody wrote, on one line and cut short, for a view with one line to give it. */
+export function asOneLine(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= ASKED_CHARS ? flat : `${flat.slice(0, ASKED_CHARS).trimEnd()}\u2026`;
+}
+
+/**
+ * When the thread began, out of the key it is remembered by, for the platforms
+ * whose key says. Slack names a thread by the moment its first message was
+ * posted, and a mention from one carries the channel's id as its title, so
+ * without this every thread in a channel reads as the same thread.
+ */
+export function threadStartedAt(conversationKey: string): string | undefined {
+  const parts = conversationKey.split(":");
+  if (parts[0] !== "slack" || parts.length < 4) return undefined;
+  const seconds = Number(parts[3]);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  return new Date(seconds * 1000).toISOString();
+}
 
 /**
  * What this process is doing right now, for the web view to publish. Read-only by
@@ -1026,6 +1053,21 @@ export function createConversation({
     if (sessionId === undefined) adoptFork(mention, remembered);
   }
 
+  /** What the web view is told this thread is. `said` is the mention's words with any group taken off the front. */
+  function noteThread(mention: Mention, said: string): void {
+    const asked = asOneLine(said);
+    thread = {
+      platform: mention.platform,
+      title: mention.title,
+      startedAt: threadStartedAt(mention.conversationKey),
+      // A mention that was nothing but a group leaves the last thing asked standing.
+      asked: asked === "" ? thread?.asked ?? "" : asked,
+      url: mention.url,
+      author: mention.author,
+      receivedAt: mention.receivedAt,
+    };
+  }
+
   async function start(mention: Mention): Promise<void> {
     conversationKey ??= mention.conversationKey;
 
@@ -1113,13 +1155,6 @@ export function createConversation({
 
     async handle(mention) {
       mentions += 1;
-      thread = {
-        platform: mention.platform,
-        title: mention.title,
-        url: mention.url,
-        author: mention.author,
-        receivedAt: mention.receivedAt,
-      };
       conversationKey ??= mention.conversationKey;
       if (conversationKey !== mention.conversationKey) {
         // per-conversation gives one process per thread; anything else is a misconfiguration.
@@ -1134,6 +1169,7 @@ export function createConversation({
       // Read before the two branches below, because calling the agent off is the
       // one thing a person needs to be able to say while it is running or waiting.
       const parsed = parseDirective(say.spokenText(mention));
+      noteThread(mention, parsed.rest);
       // Ending the process subsumes stopping the turn, so it is read first.
       if (parsed.directive.exit === true) {
         await endProcess(mention);
