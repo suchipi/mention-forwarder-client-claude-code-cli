@@ -117,8 +117,8 @@ describe("what the agent is told", () => {
   });
 
   it("labels the words a group left behind, not the group itself", () => {
-    // Put the label in front instead and `[stop]` stops matching, so the turn it
-    // was meant to call off keeps running.
+    // The group is this program's own business, so the agent is handed what was
+    // left behind rather than being asked to read around it.
     const raw = {
       ...mention,
       text: "@my-bot [stop] do this instead",

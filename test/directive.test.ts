@@ -130,6 +130,67 @@ describe("the [setting=...] group", () => {
   });
 });
 
+describe("where in the mention the group is written", () => {
+  it("reads one written after a person's own words, which is where people put it", () => {
+    const parsed = parseDirective("Yes, they should. Good catch. [new, model=opus] fix this");
+    deepStrictEqual(parsed.directive, { settings: { model: "opus" }, new: true });
+    strictEqual(parsed.rest, "Yes, they should. Good catch. fix this");
+  });
+
+  it("reads one written last, with nothing after it", () => {
+    const parsed = parseDirective("look at the release branch instead [stop]");
+    deepStrictEqual(parsed.directive, { settings: {}, interrupt: true });
+    strictEqual(parsed.rest, "look at the release branch instead");
+  });
+
+  it("keeps the lines of a mention it was written in the middle of", () => {
+    const parsed = parseDirective("have a look at this [effort=max]\nand then at the tests");
+    deepStrictEqual(parsed.directive, { settings: { effort: "max" } });
+    strictEqual(parsed.rest, "have a look at this\nand then at the tests");
+  });
+
+  it("leaves ordinary brackets alone wherever they are, as it does at the front", () => {
+    for (const body of ["have a look [WIP] at this", "fixed in [#12]", "the config [fixes=#12] says so"]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {} }, body);
+      strictEqual(parseDirective(body).rest, body);
+      strictEqual(parseDirective(body).problem, undefined, body);
+    }
+  });
+
+  it("reads the first group it understands and hands the others to the agent", () => {
+    const parsed = parseDirective("[WIP] [model=opus] go, and mind the [bug] in there");
+    deepStrictEqual(parsed.directive, { settings: { model: "opus" } });
+    strictEqual(parsed.rest, "[WIP] go, and mind the [bug] in there");
+  });
+
+  it("leaves the text of a markdown link alone, however it reads", () => {
+    for (const body of ["see [new](https://example.com/x) for why", "the [stop](#stopping-a-turn) section"]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {} }, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("leaves a group somebody wrote in backticks alone, since they are naming it rather than writing it", () => {
+    for (const body of ["does `[clear]` wipe the session id too?", "```\n[stop]\n```", "``[model=opus]``"]) {
+      deepStrictEqual(parseDirective(body).directive, { settings: {} }, body);
+      strictEqual(parseDirective(body).rest, body);
+    }
+  });
+
+  it("still reads one written outside the backticks, in the same mention", () => {
+    const parsed = parseDirective("`[stop]` is the word for it, so: [stop]");
+    deepStrictEqual(parsed.directive, { settings: {}, interrupt: true });
+    strictEqual(parsed.rest, "`[stop]` is the word for it, so:");
+  });
+
+  it("reports a value it cannot honour from there too, rather than reading past it", () => {
+    const parsed = parseDirective("have a look [effort=turbo] at this");
+    deepStrictEqual(parsed.directive, { settings: {} });
+    match(parsed.problem ?? "", /effort level `turbo`/);
+    strictEqual(parsed.rest, "have a look at this");
+  });
+});
+
 describe("the [interrupt] word", () => {
   it("takes any of the words it documents, whatever their case", () => {
     for (const word of ["interrupt", "stop", "int", "STOP", "Interrupt"]) {

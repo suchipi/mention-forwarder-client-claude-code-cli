@@ -11,7 +11,7 @@ Linear  ──┘           ▲                                      ◀──�
                       └─────────────── reply file ───────────┘
 ```
 
-One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model, reasoning effort, or any other setting the config file takes, by opening a mention with a group like `[model=opus, effort=max]`, a comment written while the agent is working reaches the turn it is working on, a turn already running can be called off with `[stop]`, and a thread's history can be thrown away with `[clear]` (or a mention of nothing but `/clear`) or summarized in place with `[compact]`.
+One conversation is one session. Every mention on the same GitHub issue, Slack thread, or Linear issue continues the same Claude Code session, so the agent still knows what it was doing there; mentions in different places never share context. Each thread can also be put on its own model, reasoning effort, or any other setting the config file takes, by writing a group like `[model=opus, effort=max]` into a mention, a comment written while the agent is working reaches the turn it is working on, a turn already running can be called off with `[stop]`, and a thread's history can be thrown away with `[clear]` (or a mention of nothing but `/clear`) or summarized in place with `[compact]`.
 
 | mention-forwarder                  | this program                                | Claude Code                            |
 | ---------------------------------- | ------------------------------------------- | -------------------------------------- |
@@ -123,7 +123,7 @@ also update the changelog
 
 That label is the only place a message names anybody, and it is the last thing before the words it belongs to. A thread has more than one person in it, and the agent is asked to read the label before it attributes anything or quotes anybody, so nothing is allowed between the two. The permalink is parenthetical so that the colon ends the line and everything after it is what was actually said. A mention that carried no platform or no permalink leaves those parts out; one whose author is unknown says `someone`.
 
-The label goes on what is left of a mention once a `[...]` group has been taken off the front, so `[stop] do this instead` still stops the turn and then runs as its own. Were it the other way round the group would no longer be at the start, nothing would match it, and the turn it was meant to call off would keep going. An answer to a permission request or a question is named the same way when it reaches the agent.
+The label goes on what is left of a mention once a `[...]` group has been taken out of it, so `[stop] do this instead` still stops the turn and then runs as its own. The group is this program's own business, and the agent is never given it. An answer to a permission request or a question is named the same way when it reaches the agent.
 
 A few lines are also appended to the session's system prompt, because Claude Code otherwise has every reason to believe it is talking to somebody at a terminal: that its replies are posted as comments, that nobody is at a keyboard, where the thread is, and how long an answer takes to come back. What it says depends on `--approval`.
 
@@ -247,13 +247,13 @@ A request only lives as long as the process holding it. If mention-forwarder clo
 
 ## Settings a thread can change
 
-Whoever writes the mention picks what the thread runs on, with a bracketed group at the very start of what they wrote:
+Whoever writes the mention picks what the thread runs on, with a bracketed group, written wherever in the comment it reads best:
 
 ```
 @my-bot [model=opus, effort=max] work out why the deploy hangs
 ```
 
-The group is read, applied to the thread, and removed; the agent is given only what follows it. Nothing has to be configured for this to work, and it needs no access to the machine the bot runs on.
+The group is read, applied to the thread, and taken out; the agent is given what is left of the comment. Nothing has to be configured for this to work, and it needs no access to the machine the bot runs on.
 
 Every setting is written under the name [the config file](#settings) gives it. These are the ones a thread may take on:
 
@@ -274,7 +274,7 @@ The rest of the file belongs to the whole process, which is running every conver
 
 |                   |                                                                                                                                                                                                                                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Where it goes     | First thing after the trigger phrase, and nothing before it. `look at this [model=opus]` is ordinary text.                                                                                                                                |
+| Where it goes     | Anywhere in the comment. `look at this [model=opus]` reads as `[model=opus] look at this` does, though a group in backticks or in a link's text is left alone.                                                                            |
 | Shape             | Comma-separated `name=value` pairs, any of them alone, in any order. Setting names are not case sensitive; whether a value is depends on the setting. A value cannot hold a comma, since that is what separates one pair from the next.    |
 | Lists             | `addDirs` and `claudeArgs` hold more than one, so write the name again for each: `[addDirs=../shared, addDirs=/srv/other]`.                                                                                                               |
 | How long it lasts | Every later mention in that thread runs on it too, until another group changes it. It is remembered alongside the session id, so it survives the process going away.                                                                      |
@@ -288,6 +288,8 @@ Some examples:
 | `@my-bot [progress=all]` while the agent is working         | The thread starts seeing the work at once, and whatever `final` was holding back is posted. The turn carries on where it was; nothing is restarted.                     |
 | `@my-bot [addDirs=../shared, addDirs=/srv/other] go`        | The thread runs with both directories, in place of whatever the process was started with.                                                                              |
 | `@my-bot [EFFORT=High, Model=opus] go`                      | The same as `[effort=high, model=opus] go`.                                                                                                                            |
+| `@my-bot have a look at this [model=opus]`                  | The same as writing the group first. It is read where it stands, and the thread is asked to have a look.                                                               |
+| `@my-bot see [new](https://ex.com) for why`                 | Ordinary text: the text of a markdown link is left alone, as any other brackets are.                                                                                   |
 | `@my-bot [WIP] have a look`                                 | Ordinary text. `WIP` is not `name=value`, so the whole group is left alone and reaches the agent as written.                                                            |
 | `@my-bot [fixes=#12] go`                                    | Ordinary text too: `fixes` is not a setting, so those brackets are somebody else's.                                                                                    |
 | `@my-bot [effort=turbo] go`                                 | `turbo` is not an effort level, so the bot says so in the thread and does not run the mention.                                                                          |

@@ -40,7 +40,7 @@ export type Directive = {
 };
 
 export type Parsed = {
-  /** What the group asked for, carrying no settings when the mention did not open with one. */
+  /** What the group asked for, carrying no settings when the mention did not carry one. */
   directive: Directive;
   /** The mention with the group removed. */
   rest: string;
@@ -48,8 +48,17 @@ export type Parsed = {
   problem?: string;
 };
 
-const GROUP = /^\[([^\]\n]*)\]/;
+const GROUP = /\[([^\]\n]*)\]/g;
 const SLASH = /^\/([a-z]+)$/i;
+const CODE = /(`+)[\s\S]*?\1/g;
+
+function inCode(text: string, at: number): boolean {
+  for (const span of text.matchAll(CODE)) {
+    const start = span.index ?? 0;
+    if (start <= at && at < start + span[0].length) return true;
+  }
+  return false;
+}
 
 function nothing(rest: string, problem?: string): Parsed {
   return problem === undefined
@@ -57,8 +66,22 @@ function nothing(rest: string, problem?: string): Parsed {
     : { directive: { settings: {} }, rest, problem };
 }
 
+/** A group cut out from between two words would otherwise leave the gap behind. */
+function withoutGroup(text: string, at: number, length: number): string {
+  const before = text.slice(0, at).replace(/[^\S\n]+$/, "");
+  const after = text.slice(at + length).replace(/^[^\S\n]+/, "");
+  const joint = before === "" || after === "" || before.endsWith("\n") || after.startsWith("\n") ? "" : " ";
+  return (before + joint + after).trim();
+}
+
 /**
- * Reads a `[setting=..., interrupt, exit, clear, compact, fork, new]` group off the front of a mention.
+ * Reads a `[setting=..., interrupt, exit, clear, compact, fork, new]` group out of a mention.
+ *
+ * The group is read wherever in the mention it was written, because people write
+ * one where it reads best — after a sentence of their own, or after the trigger
+ * phrase — and a group that went unread takes the thread somewhere nobody asked
+ * for. Where a mention carries more than one, the first this understands is the
+ * one read, and the rest reach the agent as written.
  *
  * A message that is nothing but `/clear` or `/compact` is read as the group of
  * the same name, because those are the words Claude Code itself takes for the
@@ -72,9 +95,11 @@ function nothing(rest: string, problem?: string): Parsed {
  * the setting's own business.
  *
  * Anything else in brackets is left alone and passed to the agent as written,
- * because a comment may well open with `[WIP]` or `[bug]` and mean nothing by it.
- * A group that names a setting this understands but cannot honour is reported
- * instead, so a typo is never silently ignored.
+ * because a comment may well carry `[WIP]` or `[bug]` and mean nothing by it. The
+ * text of a markdown link is left alone for the same reason, and so is anything in
+ * backticks, since a thread about this program is full of people naming a group
+ * rather than writing one. A group that names a setting this understands but
+ * cannot honour is reported instead, so a typo is never silently ignored.
  */
 export function parseDirective(body: string): Parsed {
   const text = body.trim();
@@ -86,17 +111,28 @@ export function parseDirective(body: string): Parsed {
     return nothing(text);
   }
 
-  const match = GROUP.exec(text);
-  if (match === null) return nothing(text);
+  for (const match of text.matchAll(GROUP)) {
+    const at = match.index ?? 0;
+    // `[new](https://…)` is a link, and `` `[stop]` `` is somebody talking about one.
+    if (text[at + match[0].length] === "(" || inCode(text, at)) continue;
+    const read = readGroup(text, at, match[0], match[1] ?? "");
+    if (read !== undefined) return read;
+  }
+  return nothing(text);
+}
 
-  const inside = match[1] ?? "";
+/**
+ * Reads one group, handing back nothing where those brackets turn out to be
+ * somebody else's rather than a group written to this program.
+ */
+function readGroup(text: string, at: number, whole: string, inside: string): Parsed | undefined {
   const parts = inside
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part !== "");
-  if (parts.length === 0) return nothing(text);
+  if (parts.length === 0) return undefined;
 
-  const rest = text.slice(match[0].length).trim();
+  const rest = withoutGroup(text, at, whole.length);
   const directive: Directive = { settings: {} };
   for (const part of parts) {
     const split = part.indexOf("=");
@@ -108,13 +144,13 @@ export function parseDirective(body: string): Parsed {
       else if (COMPACT_WORDS.has(word)) directive.compact = true;
       else if (FORK_WORDS.has(word)) directive.fork = true;
       else if (NEW_WORDS.has(word)) directive.new = true;
-      else return nothing(text);
+      else return undefined;
       continue;
     }
     // A name this program has no setting for is somebody else's brackets rather
     // than a mistake: a comment may open with `[fixes=#12]` and mean only that.
     const key = settingNamed(part.slice(0, split).trim());
-    if (key === undefined) return nothing(text);
+    if (key === undefined) return undefined;
     const problem = readSetting(
       directive.settings,
       key,

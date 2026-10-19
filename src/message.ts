@@ -122,8 +122,8 @@ function orPlaceholder(body: string): string {
  * parenthetical because the colon has to be the last thing on the line:
  * whatever follows it reads as part of what was said.
  *
- * `body` is what is left once a `[...]` group has been taken off the front, so a
- * label never lands in front of one and nothing here can stop `[stop]` parsing.
+ * `body` is what is left once a `[...]` group has been taken out, because the
+ * group is this program's own business and the agent is never given it.
  */
 function said(mention: Mention, body: string): string {
   const via = [mention.platform, mention.kind]
