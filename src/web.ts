@@ -271,6 +271,10 @@ const STYLE = `
     --running: #1f7a4d;
     --waiting: #a15c00;
     --idle: #6b7280;
+    --soft: #eceef2;
+    --failed: #c0362c;
+    --added: #e3f4e8;
+    --removed: #fbe7e5;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -283,6 +287,10 @@ const STYLE = `
       --running: #57d295;
       --waiting: #e0a44a;
       --idle: #9aa2ad;
+      --soft: #252930;
+      --failed: #f07167;
+      --added: #1b3326;
+      --removed: #3a2023;
     }
   }
   * { box-sizing: border-box; }
@@ -502,33 +510,96 @@ const TRANSCRIPT_PAGE = `<!doctype html>
   .back { margin: 0 0 .75rem; font-size: .85rem; }
   h1 { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
   #about { margin: .4rem 0 1.25rem; }
-  ol { gap: .6rem; }
-  .moment {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: .7rem .85rem;
+  #log { display: grid; gap: .75rem; }
+  .moment { min-width: 0; }
+  .aside { display: grid; gap: .75rem; margin-left: .45rem; padding-left: .9rem; border-left: 2px solid var(--line); }
+  .aside > .tag { justify-self: start; }
+  .person { margin-top: .75rem; padding: .7rem .9rem; background: var(--soft); border-radius: 10px; }
+  #log > .person:first-child { margin-top: 0; }
+  .who { margin: 0 0 .3rem; display: flex; gap: .5rem; color: var(--dim); font-size: .75rem; }
+  pre.prose { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+  .thought pre.prose, .result pre.prose { color: var(--dim); }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
   }
-  .moment.aside { border-style: dashed; }
-  .who { margin: 0 0 .4rem; display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; font-size: .8rem; }
-  .name { font-weight: 600; }
-  .person .name { color: var(--link); }
-  .tool .name, .result .name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .thought .name, .result .name { color: var(--dim); }
-  .note .name { color: var(--waiting); }
-  .when { color: var(--dim); }
+  button.head { cursor: pointer; }
+  .thought .head { margin-bottom: .3rem; }
+  .icon { flex: none; width: 1rem; height: 1rem; color: var(--dim); }
+  .icon svg { display: block; width: 100%; height: 100%; }
+  .chevron { margin-left: auto; transition: transform .15s; }
+  .call.open .chevron { transform: rotate(90deg); }
+  .call.failed > .head > .icon:first-child { color: var(--failed); }
+  .chip {
+    padding: 0 .4rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8rem;
+  }
+  .dim { color: var(--dim); font-size: .85rem; }
+  .marks:empty { display: none; }
   .tag { color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 0 .4rem; font-size: .7rem; }
-  .tag.failed { color: var(--waiting); }
-  pre.text {
+  .tag.failed { color: var(--failed); border-color: currentColor; }
+  .line, .body { margin: .35rem 0 0 1.5rem; }
+  .line {
+    padding: .3rem .55rem;
+    background: var(--soft);
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8rem;
+    line-height: 1.45;
+  }
+  /* Clamped on an inner box, since a padded one lets the next line show through its padding. */
+  .line > div {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .call.open .line > div { display: block; }
+  .body { display: none; }
+  .call.open .body { display: grid; gap: .6rem; }
+  .body p { margin: 0; }
+  .label { margin: 0 0 .25rem; color: var(--dim); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
+  pre.code {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: .82rem;
+    font-size: .8rem;
     line-height: 1.45;
   }
-  .person pre.text, .agent pre.text, .thought pre.text { font-family: inherit; font-size: .92rem; }
-  pre.folded {
+  pre.output { padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 6px; }
+  .failed pre.output { border-color: var(--failed); }
+  .diff {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8rem;
+    line-height: 1.45;
+  }
+  .diff div { padding: 0 .55rem 0 calc(.55rem + 2ch); text-indent: -2ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .diff .removed { background: var(--removed); }
+  .diff .added { background: var(--added); }
+  .diff .removed::before { content: "- "; color: var(--dim); }
+  .diff .added::before { content: "+ "; color: var(--dim); }
+  .note .head, .note .icon, .note pre.prose { color: var(--waiting); }
+  .note pre.prose { margin-left: 1.5rem; font-size: .9rem; }
+  .pending { color: var(--dim); font-size: .82rem; font-style: italic; }
+  .folded {
     max-height: 14rem;
     overflow: hidden;
     -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
@@ -554,7 +625,7 @@ const TRANSCRIPT_PAGE = `<!doctype html>
   <h1 id="title">A session</h1>
   <p class="meta" id="about"></p>
   <p class="sub" id="sub">Loading…</p>
-  <ol id="log"></ol>
+  <div id="log"></div>
 </main>
 <script>
 ${ELEMENT}
@@ -567,17 +638,35 @@ const log = document.getElementById("log");
 /** Past this many characters a block is folded, because one file a tool read is longer than a screen. */
 const FOLD_CHARS = 1200;
 
-/** A result is not told the name of the call it answers, so the calls already on the page are asked. */
-const names = new Map();
+/** A result names only the call it answers, which may have reached the page a refresh earlier. */
+const calls = new Map();
 
 let from = 0;
+let seen = 0;
 
-const LABELS = { person: "From the thread", agent: "The agent", thought: "Thinking", note: "Claude Code" };
+/** Lucide's outlines, inlined because this page fetches nothing. */
+const ICONS = {
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>',
+  write: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/>',
+  edit: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  web: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  agent: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  tool: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  thought: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  result: '<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+};
 
-function label(one) {
-  if (one.from === "tool") return one.tool || "a tool";
-  if (one.from === "result") return "↳ " + (names.get(one.useId) || "what came back");
-  return LABELS[one.from] || one.from;
+function icon(which) {
+  const holder = element("span", "icon");
+  holder.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    ICONS[which] +
+    "</svg>";
+  return holder;
 }
 
 function when(at) {
@@ -585,33 +674,221 @@ function when(at) {
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleTimeString() : "";
 }
 
-function moment(one) {
-  if (one.from === "tool") names.set(one.useId, one.tool);
+function text(value) {
+  return typeof value === "string" ? value : "";
+}
 
-  const item = element("li", "moment " + one.from + (one.aside ? " aside" : ""));
+function basename(path) {
+  return path.split("/").pop() || path;
+}
 
-  const who = element("p", "who");
-  who.append(element("span", "name", label(one)));
-  if (one.aside) who.append(element("span", "tag", "subagent"));
-  if (one.failed) who.append(element("span", "tag failed", "failed"));
-  const at = when(one.at);
-  if (at) who.append(element("span", "when", at));
-  item.append(who);
-
-  const text = element("pre", "text", one.text);
-  item.append(text);
-  if (one.text.length > FOLD_CHARS) {
-    text.classList.add("folded");
+function foldable(node, long) {
+  const holder = element("div");
+  holder.append(node);
+  if (long) {
+    node.classList.add("folded");
     const more = element("button", "more", "Show all");
     more.addEventListener("click", function () {
-      text.classList.remove("folded");
+      node.classList.remove("folded");
       more.remove();
     });
-    item.append(more);
+    holder.append(more);
   }
-  if (one.cut) item.append(element("p", "cut", one.cut.toLocaleString() + " more characters were not kept."));
+  return holder;
+}
 
-  return item;
+function cutNote(cut) {
+  return element("p", "cut", cut.toLocaleString() + " more characters were not kept.");
+}
+
+function block(className, value, cut) {
+  const holder = foldable(element("pre", className, value), value.length > FOLD_CHARS);
+  if (cut) holder.append(cutNote(cut));
+  return holder;
+}
+
+function diff(before, after) {
+  const holder = element("div", "diff");
+  for (const line of before.split("\\n")) holder.append(element("div", "removed", line));
+  for (const line of after.split("\\n")) holder.append(element("div", "added", line));
+  return foldable(holder, before.length + after.length > FOLD_CHARS);
+}
+
+function lines(input) {
+  const start = typeof input.offset === "number" ? input.offset : 1;
+  if (typeof input.limit === "number") return "lines " + start + "-" + (start + input.limit - 1);
+  return typeof input.offset === "number" ? "from line " + start : "";
+}
+
+/**
+ * How a call reads on the page: what it was for, and on a row of its own what it
+ * was called with, so a long command is not cut short to share a line. Anything
+ * else worth seeing waits until the call is opened. A tool not named here is
+ * shown with the arguments it was given.
+ */
+function shape(tool, input) {
+  switch (tool) {
+    case "Bash":
+      return { icon: "terminal", title: text(input.description) || "Run a command", line: text(input.command) };
+    case "Read":
+      return { icon: "file", title: "Read", file: text(input.file_path), extra: lines(input) };
+    case "Write":
+      return { icon: "write", title: "Write", file: text(input.file_path), code: text(input.content) };
+    case "Edit":
+      return {
+        icon: "edit",
+        title: input.replace_all === true ? "Edit every match in" : "Edit",
+        file: text(input.file_path),
+        diff: [text(input.old_string), text(input.new_string)],
+      };
+    case "Grep":
+      return { icon: "search", title: "Search" + (text(input.path) ? " in " + basename(input.path) : ""), line: text(input.pattern) };
+    case "Glob":
+      return { icon: "search", title: "Find files", line: text(input.pattern) };
+    case "WebFetch":
+      return { icon: "web", title: "Fetch", line: text(input.url), prose: text(input.prompt) };
+    case "WebSearch":
+      return { icon: "web", title: "Search the web", line: text(input.query) };
+    case "Task":
+    case "Agent":
+      return {
+        icon: "agent",
+        title: text(input.description) || "Hand off to a subagent",
+        extra: text(input.subagent_type),
+        prose: text(input.prompt),
+      };
+  }
+  const given = JSON.stringify(input);
+  return { icon: "tool", title: tool, line: given === "{}" ? "" : given };
+}
+
+function call(one) {
+  const tool = one.tool || "a tool";
+  let input;
+  try {
+    input = JSON.parse(one.text);
+  } catch (error) {
+    input = undefined;
+  }
+  // Arguments cut short at the server are no longer JSON, and are shown as they came.
+  const how = input !== null && typeof input === "object" && !Array.isArray(input)
+    ? shape(tool, input)
+    : { icon: "tool", title: tool, line: one.text };
+
+  const node = element("div", "moment call");
+  const head = element("button", "head");
+  head.type = "button";
+  head.title = when(one.at);
+  head.setAttribute("aria-expanded", "false");
+  head.append(icon(how.icon), element("span", null, how.title));
+  if (how.file) {
+    const chip = element("span", "chip", basename(how.file));
+    chip.title = how.file;
+    head.append(chip);
+  }
+  if (how.extra) head.append(element("span", "dim", how.extra));
+  const marks = element("span", "marks");
+  const chevron = icon("chevron");
+  chevron.classList.add("chevron");
+  head.append(marks, chevron);
+  node.append(head);
+
+  if (how.line) {
+    const line = element("div", "line");
+    line.append(element("div", null, how.line));
+    node.append(line);
+  }
+
+  const body = element("div", "body");
+  if (how.file) body.append(element("p", "dim", how.file));
+  if (how.diff) body.append(diff(how.diff[0], how.diff[1]));
+  if (how.code) body.append(block("code", how.code));
+  if (how.prose) {
+    const asked = block("prose", how.prose);
+    asked.prepend(element("p", "label", "What it was asked"));
+    body.append(asked);
+  }
+  if (one.cut) body.append(cutNote(one.cut));
+  const output = element("div");
+  output.append(element("p", "pending", "Nothing has come back yet."));
+  body.append(output);
+  node.append(body);
+
+  head.addEventListener("click", function () {
+    head.setAttribute("aria-expanded", String(node.classList.toggle("open")));
+  });
+
+  calls.set(one.useId, { node: node, marks: marks, output: output });
+  return node;
+}
+
+function headed(className, iconName, label, at) {
+  const node = element("div", "moment " + className);
+  const head = element("p", "head");
+  head.title = when(at);
+  head.append(icon(iconName), element("span", null, label));
+  node.append(head);
+  return node;
+}
+
+/** What came back is shown inside the call it answers, so this returns a node only for a result with no call on the page. */
+function answer(one) {
+  const asked = calls.get(one.useId);
+  if (asked === undefined) {
+    const node = headed("result", "result", "What came back", one.at);
+    if (one.failed) node.firstChild.append(element("span", "tag failed", "failed"));
+    node.append(block("prose", one.text, one.cut));
+    return node;
+  }
+  if (one.failed) {
+    asked.node.classList.add("failed");
+    asked.marks.replaceChildren(element("span", "tag failed", "failed"));
+  }
+  asked.output.replaceChildren(element("p", "label", one.failed ? "What went wrong" : "What came back"));
+  if (one.text === "") asked.output.append(element("p", "pending", "Nothing."));
+  else asked.output.append(block("code output", one.text, one.cut));
+  return undefined;
+}
+
+function moment(one) {
+  if (one.from === "tool") return call(one);
+  if (one.from === "result") return answer(one);
+  if (one.from === "thought") {
+    const node = headed("thought", "thought", "Thinking", one.at);
+    node.append(block("prose", one.text, one.cut));
+    return node;
+  }
+  if (one.from === "note") {
+    const node = headed("note", "warning", "Claude Code", one.at);
+    node.append(block("prose", one.text, one.cut));
+    return node;
+  }
+  if (one.from === "person") {
+    const node = element("div", "moment person");
+    const who = element("p", "who");
+    who.append(element("span", null, "From the thread"), element("span", null, when(one.at)));
+    node.append(who, block("prose", one.text, one.cut));
+    return node;
+  }
+  const node = element("div", "moment agent");
+  node.title = when(one.at);
+  node.append(block("prose", one.text, one.cut));
+  return node;
+}
+
+/** A subagent's work is gathered under one line, apart from the thread's, since it reaches the thread only through what the agent makes of it. */
+function place(node, aside) {
+  if (!aside) {
+    log.append(node);
+    return;
+  }
+  let group = log.lastElementChild;
+  if (group === null || !group.classList.contains("aside")) {
+    group = element("div", "aside");
+    group.append(element("span", "tag", "subagent"));
+    log.append(group);
+  }
+  group.append(node);
 }
 
 function describe(one) {
@@ -657,15 +934,19 @@ async function refresh() {
   // A transcript read from its start again is one that was replaced, not added to.
   if (payload.from === 0) {
     log.replaceChildren();
-    names.clear();
+    calls.clear();
+    seen = 0;
   }
-  for (const one of payload.moments) log.append(moment(one));
+  for (const one of payload.moments) {
+    const node = moment(one);
+    if (node !== undefined) place(node, one.aside);
+  }
+  seen += payload.moments.length;
   from = payload.next;
 
-  const count = log.children.length;
-  sub.textContent = count === 0
+  sub.textContent = seen === 0
     ? "Nothing in this session yet."
-    : count + (count === 1 ? " thing" : " things") + " so far, refreshed every 2s.";
+    : seen + (seen === 1 ? " thing" : " things") + " so far, refreshed every 2s.";
   if (following && payload.moments.length > 0) window.scrollTo(0, document.body.scrollHeight);
 }
 

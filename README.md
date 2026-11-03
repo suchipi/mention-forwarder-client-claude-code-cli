@@ -628,11 +628,11 @@ What it shows is Claude Code's own transcript, the `~/.claude/projects/<project>
 
 | Shown                  | Read as                                                                                                              |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `From the thread`      | A mention, worded as the agent was given it, which on the first one is [the whole opening message](#what-the-agent-is-told). |
-| `The agent`            | What it said. Under `--progress all` the thread was posted this as it arrived; under `final`, only the last of it.    |
-| `Bash`, `Read`, `Edit` | A tool call, under the tool's own name, with the arguments it was called with.                                        |
-| `↳ Bash`               | What that call came back with, marked `failed` when the tool called it an error.                                      |
-| `subagent`             | Work a `Task` did off to the side of the thread, which reaches the thread only through whatever the agent makes of it. |
+| `From the thread`      | A mention, in a shaded box, worded as the agent was given it, which on the first one is [the whole opening message](#what-the-agent-is-told). |
+| Plain text             | What the agent said. Under `--progress all` the thread was posted this as it arrived; under `final`, only the last of it. |
+| `Thinking`             | Its reasoning, dimmed, on a model that writes it down.                                                                |
+| A tool call            | What the call was for on one line (a command's description, or `Read` and the file), and what it was called with on a row of its own beneath: the command, the pattern, the url. Four lines of that are shown until the call is opened; opening it shows the rest, an edit as the lines it took out and put in, and what came back, marked `failed` when the tool called it an error. |
+| `subagent`             | Work a `Task` did off to the side of the thread, indented under a line, which reaches the thread only through whatever the agent makes of it. |
 | `Claude Code`          | The CLI itself: a dropped connection it retried past, and anything else it wrote down as an error.                    |
 
 A block over 20,000 characters is cut there and says how much it dropped, so one read of a large file cannot become the whole page, and anything over a screenful is folded until you ask for the rest.
