@@ -397,9 +397,6 @@ describe("what the thread sees", () => {
     match(notice, /already working/);
     match(notice, /picked this up as part of that/);
     ok(notice.includes(started.url));
-    // Waiting on a turn started in another thread is what forking is for, and
-    // this is the moment somebody is watching it happen.
-    match(notice, /Open a comment here with `\[fork\]`/);
   });
 
   it("offers the fork only where forking would work", () => {
@@ -483,7 +480,6 @@ describe("what the thread sees", () => {
 
   it("says what a clear left behind", () => {
     match(say.clearedNotice(true), /Cleared this thread's context/);
-    match(say.clearedNotice(true), /knowing nothing of what was said before it/);
     match(say.clearedNotice(false), /no history here to clear/);
   });
 

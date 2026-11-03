@@ -398,10 +398,8 @@ export function steeredNotice(
 ): string | undefined {
   if (owner.url === "" || answeredTogether(owner, steerer)) return undefined;
   const notice = `The agent is already working on an earlier comment, so it picked this up as part of that. Its reply lands there rather than here: ${owner.url}`;
-  if (reviewThreadKey(steerer) === undefined) return notice;
-  return `${notice}
 
-Open a comment here with \`[fork]\` or \`[new]\` to give this review thread a session of its own, running beside the pull request rather than behind it.`;
+  return notice;
 }
 
 /** Posted once a turn somebody called off has actually stopped. */
@@ -422,7 +420,7 @@ export function exitedNotice(hadTurn: boolean): string {
 
 /** Posted when an exit found no process, which an idle session closed by mention-forwarder will do. */
 export function nothingToExit(): string {
-  return "Claude Code was not running here, so there was nothing to end. The next mention starts it.";
+  return "Claude Code was not running here, so there was nothing to end.";
 }
 
 /**
@@ -466,13 +464,13 @@ export function askOvertaken(clearing: boolean): string {
 /** Posted once a thread's history has been thrown away. */
 export function clearedNotice(hadHistory: boolean): string {
   return hadHistory
-    ? "Cleared this thread's context. The next mention here opens a new Claude Code session, which starts out knowing nothing of what was said before it. Its model and effort are unchanged."
-    : "There was no history here to clear: nothing has run in this thread yet. The next mention opens a session for it.";
+    ? "Cleared this thread's context."
+    : "There was no history here to clear: nothing has run in this thread yet.";
 }
 
 /** Posted when a compaction found no history to summarize. */
 export function nothingToCompact(): string {
-  return "There is no history here to compact: nothing has run in this thread yet. The next mention opens a session for it.";
+  return "There is no history here to compact: nothing has run in this thread yet.";
 }
 
 /**
