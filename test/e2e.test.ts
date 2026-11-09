@@ -521,7 +521,7 @@ describe("driving the claude CLI", () => {
 
     await session.waitFor(session.send("first", "a"));
     match(await session.waitFor(session.send("/compact", "b"), "Compacted"), /summary of itself/);
-    match(await session.waitFor(session.send("/clear", "c"), "Cleared"), /starts out knowing nothing/);
+    match(await session.waitFor(session.send("/clear", "c"), "Cleared"), /Cleared this thread's context\./);
 
     // Only when that is the whole of it: anywhere else the slash is the agent's
     // language rather than this program's, and goes to it as written.
@@ -799,12 +799,10 @@ describe("driving the claude CLI", () => {
       { comment: { id: 2 } },
     );
 
-    // Told to the comment that steered it, since nothing else says it landed,
-    // and offered the group that would have had it answered on its own.
+    // Told to the comment that steered it, since nothing else says it landed.
     const notice = await session.waitFor(second, "already working");
     match(notice, /picked this up as part of that/);
     match(notice, /discussion_r1/);
-    match(notice, /with `\[fork\]`/);
 
     // The answer belongs to the comment that started the turn, not the one that
     // steered it: on GitHub those are two different review threads.
