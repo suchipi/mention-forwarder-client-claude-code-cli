@@ -19,6 +19,7 @@ import type { Signal } from "./signals.ts";
 
 type Ask = Extract<Signal, { kind: "ask" }>;
 type Compacted = Extract<Signal, { kind: "compacted" }>;
+type TurnEnd = Extract<Signal, { kind: "turn-end" }>;
 
 /** A turn the CLI is running, and where its output goes. */
 type Turn = {
@@ -167,6 +168,19 @@ export type ConversationDeps = {
 const STARTUP_WINDOW_MS = 15000;
 
 /**
+ * How long a turn that ended with background work still running waits for that
+ * work to bring the agent back to it. Past this the thread is answered with what
+ * the agent had already said, rather than left with nothing at all.
+ */
+const BACKGROUND_WORK_MS = 600000;
+
+/**
+ * How long it waits once the last background task is gone. The CLI takes about a
+ * second to prompt the agent about one that finished, so this is slack.
+ */
+const BACKGROUND_RETURN_MS = 5000;
+
+/**
  * The mention again with the word that did something spent, so anything else the
  * group carried still runs as a turn of its own. The settings are written back
  * out rather than applied here, because a turn is what applies them.
@@ -203,6 +217,10 @@ export function createConversation({
 
   let turn: Turn | undefined;
   let parked: Parked | undefined;
+  /** How many background tasks the CLI has running, from the last list it published. */
+  let backgroundTasks = 0;
+  /** A turn end kept back because background work could still bring the agent back to that turn. */
+  let heldEnd: { end: TurnEnd; timer: NodeJS.Timeout } | undefined;
   const waiting: Mention[] = [];
   /** The mention that most recently reached this process, which is what names the thread. */
   let thread: Thread | undefined;
@@ -414,7 +432,72 @@ export function createConversation({
 
   // --- the signal stream ---
 
+  /** Gives up on an end that was waiting for background work, because it is no longer the turn's end. */
+  function dropHeldEnd(): void {
+    if (heldEnd === undefined) return;
+    clearTimeout(heldEnd.timer);
+    heldEnd = undefined;
+  }
+
+  function holdEnd(end: TurnEnd, waitMs: number): void {
+    dropHeldEnd();
+    const timer = setTimeout(() => {
+      heldEnd = undefined;
+      log.warn("background work never brought the agent back to this turn", {
+        afterMs: waitMs,
+        backgroundTasks,
+      });
+      finishTurn(end, true);
+    }, waitMs);
+    timer.unref();
+    heldEnd = { end, timer };
+    log.info("holding this turn open for background work", {
+      waitMs,
+      backgroundTasks,
+    });
+  }
+
+  /**
+   * Keeps a turn open while the CLI still has background work that could bring
+   * the agent back to it. Claude Code prompts the agent itself when a background
+   * task finishes, so what it said before that is the middle of the turn rather
+   * than its answer: a turn closed there posts the wrong words, and everything
+   * the agent says afterwards has nowhere to go.
+   *
+   * Bounded at both ends, so background work can delay the thread's answer but
+   * never cost it: a task that never finishes is given up on after
+   * `BACKGROUND_WORK_MS`, and the agent that never comes back to a turn whose
+   * tasks have all finished after `BACKGROUND_RETURN_MS`.
+   */
+  function holdForBackgroundWork(end: TurnEnd, running: Turn): boolean {
+    if (!end.ok || running.interrupted || running.compacting) return false;
+    // An ask the CLI gave up on is not something background work brings back.
+    if (parked !== undefined || backgroundTasks === 0) return false;
+    holdEnd(end, BACKGROUND_WORK_MS);
+    return true;
+  }
+
+  /**
+   * Whether this is the main agent at work, which is what says the CLI has come
+   * back to a turn whose end was held. A subagent left running in the background
+   * says nothing about the agent.
+   */
+  function meansTheAgentIsWorking(signal: Signal): boolean {
+    switch (signal.kind) {
+      case "session":
+      case "ask":
+        return true;
+      case "text":
+      case "tool-start":
+        return !signal.fromSubagent;
+      default:
+        return false;
+    }
+  }
+
   function onSignal(signal: Signal): void {
+    if (heldEnd !== undefined && meansTheAgentIsWorking(signal)) dropHeldEnd();
+
     switch (signal.kind) {
       case "session": {
         // Cleared before anything is written down, and whether or not the id
@@ -458,6 +541,15 @@ export function createConversation({
           subagent: signal.fromSubagent,
         });
         break;
+
+      case "background-tasks": {
+        backgroundTasks = signal.running;
+        log.debug("background tasks", { running: signal.running });
+        // Nothing left to wait for: either the CLI is about to prompt the agent
+        // about the task that just finished, or it is not coming back at all.
+        if (heldEnd !== undefined && signal.running === 0) holdEnd(heldEnd.end, BACKGROUND_RETURN_MS);
+        break;
+      }
 
       case "tool-end":
         log.debug("tool finished", {
@@ -543,9 +635,7 @@ export function createConversation({
    * A turn of ours ending this way had nothing to post either, so leaving it open
    * costs the thread nothing, and its own end still closes it.
    */
-  function endedAPromptOfItsOwn(
-    end: Extract<Signal, { kind: "turn-end" }>,
-  ): boolean {
+  function endedAPromptOfItsOwn(end: TurnEnd): boolean {
     return (
       end.ok &&
       end.modelTurns === 0 &&
@@ -554,7 +644,7 @@ export function createConversation({
     );
   }
 
-  function finishTurn(end: Extract<Signal, { kind: "turn-end" }>): void {
+  function finishTurn(end: TurnEnd, afterWaiting = false): void {
     const ownPrompt = endedAPromptOfItsOwn(end);
     if (turn?.compacting === true) {
       // A compaction ends in exactly that shape too, and that end is this
@@ -581,6 +671,9 @@ export function createConversation({
       return;
     }
 
+    if (!afterWaiting && holdForBackgroundWork(end, finished)) return;
+    dropHeldEnd();
+
     if (parked !== undefined) {
       // The CLI gave up on the ask on its way out; nothing left to answer it with.
       if (parked.timer !== undefined) clearTimeout(parked.timer);
@@ -597,14 +690,13 @@ export function createConversation({
       // result, and the thread should not be told the same thing twice.
       if (!finished.postedText || detail.trim() !== end.text.trim())
         post(say.failureNotice(detail));
-    } else if (
-      !finished.postedText &&
-      end.text.trim() !== "" &&
-      end.text.trim() !== finished.flushed
-    ) {
+    } else if (!finished.postedText) {
       // Either --progress final, or the model's words never arrived as their own
-      // event. Either way this is the same text, so it cannot double up.
-      post(end.text, true);
+      // event. Either way this is the same text, so it cannot double up. A turn
+      // that background work brought back can end on a prompt the agent had
+      // nothing to add to, and then its last words are the ones it held.
+      const lastWords = end.text.trim() === "" ? (finished.held.at(-1) ?? "") : end.text;
+      if (lastWords.trim() !== "" && lastWords.trim() !== finished.flushed) post(lastWords, true);
     }
 
     if (end.denials.length > 0 && current.approval === "deny")
@@ -629,6 +721,8 @@ export function createConversation({
 
   function onExit(code: number | null, signal: NodeJS.Signals | null): void {
     claude = undefined;
+    backgroundTasks = 0;
+    dropHeldEnd();
     if (parked !== undefined) {
       if (parked.timer !== undefined) clearTimeout(parked.timer);
       parked = undefined;
@@ -770,6 +864,15 @@ export function createConversation({
       parked: parked !== undefined,
     });
     await claude.interrupt();
+
+    // A turn waiting on background work has nothing running that could end it, so
+    // the end being held is what closes it. Read after the interrupt, which
+    // settles the turn itself wherever there was something to settle.
+    const held = heldEnd?.end;
+    if (held !== undefined) {
+      dropHeldEnd();
+      finishTurn(held, true);
+    }
   }
 
   /**
@@ -878,6 +981,7 @@ export function createConversation({
     // Dropped before the process goes: a turn-end event on the way out would
     // otherwise post to a turn that is over, and start the next one from here.
     turn = undefined;
+    dropHeldEnd();
     log.info("ending the claude process", {
       id: mention.id,
       hadTurn,
@@ -1268,6 +1372,7 @@ export function createConversation({
       }
       claude = undefined;
       turn = undefined;
+      dropHeldEnd();
     },
   };
 }

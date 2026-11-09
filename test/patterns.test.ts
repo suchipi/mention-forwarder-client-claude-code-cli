@@ -206,6 +206,20 @@ const EVENTS: Record<string, RawEvent> = {
     stop_reason: null,
     type: "result",
   },
+  backgroundTaskStarted: {
+    type: "system",
+    subtype: "background_tasks_changed",
+    tasks: [{ task_id: "bqqqykyqi", task_type: "local_bash", description: "sleep 45; echo done" }],
+    uuid: "3307098c-0cd1-46cd-b77c-9b46b53e7e3c",
+    session_id: "f1e89d14",
+  },
+  backgroundTasksDone: {
+    type: "system",
+    subtype: "background_tasks_changed",
+    tasks: [],
+    uuid: "47e82fce-9474-480b-b5ea-54d292ad491e",
+    session_id: "f1e89d14",
+  },
   rateLimit: {
     type: "rate_limit_event",
     rate_limit_info: { status: "allowed", resetsAt: 1787408400, rateLimitType: "five_hour" },
@@ -388,6 +402,11 @@ describe("recognizing what claude says", () => {
     if (done.kind !== "turn-end") return;
     strictEqual(done.ok, false);
     strictEqual(done.error, "the model is unavailable");
+  });
+
+  it("counts the background tasks the CLI has running", () => {
+    deepStrictEqual(only(EVENTS["backgroundTaskStarted"] as RawEvent), { kind: "background-tasks", running: 1 });
+    deepStrictEqual(only(EVENTS["backgroundTasksDone"] as RawEvent), { kind: "background-tasks", running: 0 });
   });
 
   it("keeps rate limits and thinking ticks out of the way", () => {

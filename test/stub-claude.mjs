@@ -67,6 +67,10 @@ function emitResult(text, extra = {}) {
   });
 }
 
+function emitBackgroundTasks(tasks) {
+  out({ type: "system", subtype: "background_tasks_changed", tasks, session_id: sessionId });
+}
+
 /** The three shapes a `can_use_tool` ask arrives in, one scenario each. */
 const ASKS = {
   ask: {
@@ -222,6 +226,25 @@ function runTurn(text) {
       request: { subtype: "can_use_tool", tool_use_id: "toolu_1", ...shape.request },
     });
     pendingAsk = requestId;
+    return;
+  }
+
+  // What the real CLI does with a background task: the turn ends while the task
+  // is still running, and finishing it prompts the agent again of its own accord.
+  // CLAUDE_STUB_BACKGROUND=abandoned stops short of that second prompt, which is
+  // the turn nothing is ever going to come back to.
+  if (scenario === "background" && turns === 1) {
+    emitBackgroundTasks([{ task_id: "bg-1", task_type: "local_bash", description: "sleep 45" }]);
+    emitText("stub started something in the background");
+    emitResult("stub started something in the background", { num_turns: 2 });
+    running = false;
+    setTimeout(() => {
+      emitBackgroundTasks([]);
+      if (process.env.CLAUDE_STUB_BACKGROUND === "abandoned") return;
+      emitInit();
+      emitText("stub finished the background thing");
+      emitResult("stub finished the background thing", { num_turns: 1 });
+    }, 150);
     return;
   }
 

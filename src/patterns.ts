@@ -228,6 +228,20 @@ const compactBoundary: Rule = {
   },
 };
 
+/**
+ * Every background task the CLI has running, listed again whenever one starts or
+ * finishes. Only the count is read: a turn that ends while any are left is one
+ * the CLI can still bring the agent back to, because finishing one prompts it.
+ */
+const backgroundTasks: Rule = {
+  name: "system/background-tasks-changed",
+  shape: `{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":…,"task_type":…,"description":…}]}`,
+  match(event) {
+    if (event["type"] !== "system" || event["subtype"] !== "background_tasks_changed") return null;
+    return [{ kind: "background-tasks", running: list(event["tasks"]).length }];
+  },
+};
+
 const assistantMessage: Rule = {
   name: "assistant-message",
   shape: `{"type":"assistant","message":{"content":[{"type":"text"|"thinking"|"tool_use",…}]},"parent_tool_use_id":…}`,
@@ -376,6 +390,7 @@ export const DEFAULT_RULES: readonly Rule[] = [
   thinkingTokens,
   compactionStatus,
   compactBoundary,
+  backgroundTasks,
   assistantMessage,
   toolResults,
   result,

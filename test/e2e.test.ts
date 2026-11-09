@@ -1269,6 +1269,33 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
+  it("holds a turn open for background work rather than answering with the middle of it", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      scenario: "background",
+      args: ["--no-state", "--progress", "final"],
+    });
+
+    const body = await session.waitFor(session.send("kick something off"), "stub finished");
+    doesNotMatch(body, /started something in the background/);
+    await session.end();
+  });
+
+  it("answers anyway when the background work never brings the agent back", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      scenario: "background",
+      env: { CLAUDE_STUB_BACKGROUND: "abandoned" },
+      args: ["--no-state", "--progress", "final"],
+    });
+
+    // What the agent said before it went quiet, which is better than silence.
+    match(await session.waitFor(session.send("kick something off")), /stub started something in the background/);
+    await session.end();
+  });
+
   it("posts a permission request, and what led to it, under --progress final", async () => {
     const dir = workspace();
     const session = start({

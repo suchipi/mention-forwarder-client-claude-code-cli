@@ -34,6 +34,12 @@ export type Signal =
   | { kind: "tool-start"; tool: ToolRef; fromSubagent: boolean }
   | { kind: "tool-end"; toolUseId: string; isError: boolean; summary: string; fromSubagent: boolean }
   /**
+   * How many background tasks the CLI has running, republished in full whenever
+   * one starts or finishes. Finishing one is what prompts the agent again, so a
+   * turn that ends while any are left is one it can still be brought back to.
+   */
+  | { kind: "background-tasks"; running: number }
+  /**
    * The turn has stopped and needs a person: a gated tool, or a question the
    * model asked with `AskUserQuestion`. Answering it is what lets the turn
    * continue, so nothing else happens until this is settled.

@@ -157,6 +157,12 @@ Also posted: anything the turn is waiting on a person for (below), and a line wh
 
 A turn that says nothing posts nothing, which a tool-only turn can do. Run with `--log-level debug` to see what it did instead.
 
+### Turns that background work brings back
+
+Claude Code prompts the agent again on its own when a background task finishes, so an agent that starts one and then speaks has not answered yet: it has stopped mid-turn to wait. A turn that ends with background work still running is therefore kept open rather than answered, and what the agent said in the meantime is held with the rest of the turn's progress. Under `--progress final` that is what keeps a thread from being told "waiting on the test run" as though it were the answer.
+
+Neither wait is unbounded, because a background task that never finishes would otherwise cost the thread its answer altogether. Ten minutes after the turn ended the agent is taken not to be coming back, and the thread is answered with what it had already said; once the last background task is gone, five seconds, since the CLI takes about one to bring the agent back.
+
 ## Approvals and questions
 
 Permission prompts are routed to this program rather than refused by the CLI, which is what `--permission-prompt-tool stdio` does. What happens next is `--approval`:
@@ -722,6 +728,7 @@ What travels each way:
 | out       | `{"type":"system","subtype":"init",…}`                                                                                  | Start of a turn; carries the session id.                                                                                                                         |
 | out       | `{"type":"assistant","message":{"content":[…]}}`                                                                        | One or more finished content blocks: prose, thinking, or a tool call.                                                                                            |
 | out       | `{"type":"user","message":{"content":[{"type":"tool_result",…}]}}`                                                      | What a tool returned.                                                                                                                                            |
+| out       | `{"type":"system","subtype":"background_tasks_changed","tasks":[…]}`                                                    | Every background task the CLI has running, listed again whenever one starts or finishes. A turn that ends while any are left is [kept open](#turns-that-background-work-brings-back), because finishing one prompts the agent again. |
 | out       | `{"type":"control_request","request":{"subtype":"can_use_tool",…}}`                                                     | The turn has stopped and needs a decision. `requires_user_interaction` marks the ones whose own card is the question, which in practice means `AskUserQuestion`. |
 | out       | `{"type":"result","subtype":"success",…}`                                                                               | The turn is over. Carries the last thing the model said and anything it was not allowed to run. One reporting `"num_turns":0` with nothing to say ends a prompt the CLI queued for itself, not one sent from here, and is ignored.                                                                  |
 
