@@ -1724,7 +1724,7 @@ type Listed = {
   state: string;
   mentions: number;
   turns: number;
-  thread?: { platform: string; title: string; url: string };
+  thread?: { platform: string; title: string; url: string; asked: string };
 };
 
 /** Answers once the view is up, whatever it has in it. */
