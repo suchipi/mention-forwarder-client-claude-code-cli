@@ -602,7 +602,7 @@ Forking goes through the same store as everything else, so the rules above hold:
 
 ## Seeing what is running
 
-<http://127.0.0.1:4100> lists every conversation with a process on this machine right now, and links each one back to the thread it came from. It refreshes itself every two seconds, and there is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
+<http://127.0.0.1:4100> lists every conversation with a process on this machine right now, and links each one back to the thread it came from. It is what was running the moment you loaded it, and says when that was; reload it to see where things have got to. There is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
 
 One row per conversation — a process that is running a [forked review thread](#forking-a-review-thread) has a row for it as well as for the pull request it came out of — showing:
 
@@ -624,7 +624,7 @@ mention-forwarder runs one process per conversation, so no single one of them ca
 
 ### Everything a session has done
 
-**A thread is only ever shown what the agent says, and under `--progress final` not even that until the turn is over.** Following `what it has been doing` on a conversation's row opens the whole session instead, in the order it happened: what each mention asked, what the agent answered, every tool it called and with what, what came back, and the errors Claude Code retried past. It keeps up with a running turn, appending as the session is written, and stays at the end as long as you are already there.
+**A thread is only ever shown what the agent says, and under `--progress final` not even that until the turn is over.** Following `what it has been doing` on a conversation's row opens the whole session instead, in the order it happened: what each mention asked, what the agent answered, every tool it called and with what, what came back, and the errors Claude Code retried past. It opens at the end of what the session had written when you loaded it; reload it to see what a running turn has added since.
 
 What it shows is Claude Code's own transcript, the `~/.claude/projects/<project>/<session id>.jsonl` (or under `CLAUDE_CONFIG_DIR`) that `claude --resume` reads. This only ever reads it.
 
@@ -641,7 +641,7 @@ A block over 20,000 characters is cut there and says how much it dropped, so one
 
 Only a session the list already names can be opened, and only while its conversation still has a process: this view has no password, and a transcript is a great deal more than a title.
 
-`http://127.0.0.1:4100/session.json?id=<session id>` is the same thing as JSON. `&from=<byte offset>` asks only for what the file has gained since that point, which is how the page follows a running turn without re-reading it.
+`http://127.0.0.1:4100/session.json?id=<session id>` is the same thing as JSON. `&from=<byte offset>` asks only for what the file has gained since that point, so a script following a running turn need not read it all again.
 
 ### Keeping it up between threads
 

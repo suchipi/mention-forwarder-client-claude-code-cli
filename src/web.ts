@@ -478,9 +478,10 @@ async function refresh() {
     return;
   }
   const running = payload.conversations;
+  const at = new Date().toLocaleTimeString();
   sub.textContent = running.length === 0
-    ? "Nothing running."
-    : running.length + (running.length === 1 ? " conversation" : " conversations") + ", refreshed every 2s.";
+    ? "Nothing running, as of " + at + "."
+    : running.length + (running.length === 1 ? " conversation" : " conversations") + ", as of " + at + ".";
   list.replaceChildren(...running.map(card));
   if (running.length === 0) {
     list.append(element("li", "empty", "No conversation has a process right now. One starts when the next mention arrives."));
@@ -488,7 +489,6 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, 2000);
 </script>
 </body>
 </html>
@@ -638,7 +638,7 @@ const log = document.getElementById("log");
 /** Past this many characters a block is folded, because one file a tool read is longer than a screen. */
 const FOLD_CHARS = 1200;
 
-/** A result names only the call it answers, which may have reached the page a refresh earlier. */
+/** A result names only the call it answers, which came earlier in the transcript. */
 const calls = new Map();
 
 let from = 0;
@@ -946,12 +946,11 @@ async function refresh() {
 
   sub.textContent = seen === 0
     ? "Nothing in this session yet."
-    : seen + (seen === 1 ? " thing" : " things") + " so far, refreshed every 2s.";
+    : seen + (seen === 1 ? " thing" : " things") + " so far, as of " + new Date().toLocaleTimeString() + ".";
   if (following && payload.moments.length > 0) window.scrollTo(0, document.body.scrollHeight);
 }
 
 refresh();
-setInterval(refresh, 2000);
 </script>
 </body>
 </html>
