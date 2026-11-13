@@ -1267,7 +1267,7 @@ describe("driving the claude CLI", () => {
     await session.end();
   });
 
-  it("holds a turn open for background work rather than answering with the middle of it", async () => {
+  it("posts what background work brings the agent back to say, after the answer it already gave", async () => {
     const dir = workspace();
     const session = start({
       dir,
@@ -1276,20 +1276,24 @@ describe("driving the claude CLI", () => {
     });
 
     const body = await session.waitFor(session.send("kick something off"), "stub finished");
-    doesNotMatch(body, /started something in the background/);
+    match(body, /stub started something in the background/);
+    ok(
+      body.indexOf("stub started something") < body.indexOf("stub finished the background thing"),
+      `the late reply should follow the first one:\n${body}`,
+    );
     await session.end();
   });
 
-  it("answers anyway when the background work never brings the agent back", async () => {
+  it("answers a turn whose background task never finishes", async () => {
     const dir = workspace();
     const session = start({
       dir,
       scenario: "background",
-      env: { CLAUDE_STUB_BACKGROUND: "abandoned" },
+      env: { CLAUDE_STUB_BACKGROUND: "doomed" },
       args: ["--no-state", "--progress", "final"],
     });
 
-    // What the agent said before it went quiet, which is better than silence.
+    // Nothing is ever going to end that task, and the answer does not wait on it.
     match(await session.waitFor(session.send("kick something off")), /stub started something in the background/);
     await session.end();
   });
