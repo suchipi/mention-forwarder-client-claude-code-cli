@@ -187,6 +187,16 @@ describe("reading a session's transcript", () => {
     strictEqual(failed?.text, "PreToolUse:Bash hook error: exit 2");
   });
 
+  it("does not put the CLI's report of its own background work in the thread's mouth", () => {
+    const [reported, asked] = momentsOf([
+      user("<task-notification>a background command finished</task-notification>", { origin: { kind: "task-notification" } }),
+      user("carry on then", { origin: { kind: "human" } }),
+    ]);
+
+    strictEqual(reported?.from, "note");
+    strictEqual(asked?.from, "person");
+  });
+
   it("keeps a file changing under the session, which nothing else in the transcript records", () => {
     const [note] = momentsOf([
       attachment({ type: "edited_text_file", filename: "/tmp/checkout/settings.json", snippet: "2\ttabsize: 2" }),

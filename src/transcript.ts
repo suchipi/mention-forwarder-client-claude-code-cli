@@ -158,10 +158,13 @@ function momentsOf(entry: Record<string, unknown>): Moment[] {
     moments.push(...attached(at, record(entry["attachment"])));
   } else if ((type === "user" || type === "assistant") && entry["isMeta"] !== true) {
     const content = record(entry["message"])["content"];
+    // A task-notification is the CLI bringing the agent back on its own background work.
+    const who: Moment["from"] =
+      type === "assistant" ? "agent" : record(entry["origin"])["kind"] === "task-notification" ? "note" : "person";
 
     if (typeof content === "string") {
       const said = body(content);
-      if (said.text !== "") moments.push({ at, from: type === "user" ? "person" : "agent", ...said });
+      if (said.text !== "") moments.push({ at, from: who, ...said });
     }
 
     for (const block of list(content)) {
@@ -169,7 +172,7 @@ function momentsOf(entry: Record<string, unknown>): Moment[] {
       switch (one["type"]) {
         case "text": {
           const said = body(str(one["text"]) ?? "");
-          if (said.text !== "") moments.push({ at, from: type === "user" ? "person" : "agent", ...said });
+          if (said.text !== "") moments.push({ at, from: who, ...said });
           break;
         }
         case "thinking": {
