@@ -140,6 +140,50 @@ function emitQueuedNotification() {
     duration_ms: 45,
     total_cost_usd: 0,
     stop_reason: null,
+    // CLAUDE_STUB_QUEUED_NOTIFICATION=no-origin is a release that names none,
+    // which leaves only the shape of the end to recognize it by.
+    ...(process.env.CLAUDE_STUB_QUEUED_NOTIFICATION === "no-origin"
+      ? {}
+      : { origin: { kind: "task-notification" } }),
+  });
+}
+
+/**
+ * The CLI running a prompt it queued for itself. A message arriving while one is
+ * in flight is queued behind it rather than joining it, which is what the real
+ * CLI does and what makes that end easy to mistake for the queued message's own.
+ */
+let ownPromptRunning = false;
+let queuedPrompt;
+
+function endOwnPrompt(end) {
+  end();
+  ownPromptRunning = false;
+  const queued = queuedPrompt;
+  queuedPrompt = undefined;
+  if (queued !== undefined) runTurn(queued);
+}
+
+function finishOwnPrompt(said) {
+  endOwnPrompt(() => {
+    emitText(said);
+    emitResult(said, { num_turns: 1, origin: { kind: "task-notification" } });
+  });
+}
+
+function failOwnPrompt(detail) {
+  endOwnPrompt(() => {
+    out({
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      result: detail,
+      error: detail,
+      permission_denials: [],
+      session_id: sessionId,
+      num_turns: 1,
+      origin: { kind: "task-notification" },
+    });
   });
 }
 
@@ -242,8 +286,11 @@ function runTurn(text) {
     setTimeout(() => {
       emitBackgroundTasks([]);
       emitInit();
-      emitText("stub finished the background thing");
-      emitResult("stub finished the background thing", { num_turns: 1 });
+      ownPromptRunning = true;
+      // Long enough for a test to get a mention in while that prompt is running.
+      if (process.env.CLAUDE_STUB_BACKGROUND === "late-mention")
+        setTimeout(() => failOwnPrompt("the stub's own prompt hit a rate limit"), 300);
+      else finishOwnPrompt("stub finished the background thing");
     }, 150);
     return;
   }
@@ -368,6 +415,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       .map((block) => block.text ?? "")
       .join("");
 
+    if (ownPromptRunning) {
+      queuedPrompt = text;
+      return;
+    }
     // What the real CLI does with a message written part-way through a turn: it
     // joins that turn rather than starting another one.
     if (running) {

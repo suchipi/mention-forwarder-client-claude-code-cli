@@ -148,6 +148,18 @@ const EVENTS: Record<string, RawEvent> = {
     stop_reason: null,
     type: "result",
   },
+  resultOfATaskNotification: {
+    is_error: false,
+    session_id: "9e644dd6",
+    permission_denials: [],
+    subtype: "success",
+    result: "Background task completed with exit code 0.",
+    num_turns: 1,
+    duration_ms: 1832,
+    stop_reason: "end_turn",
+    origin: { kind: "task-notification" },
+    type: "result",
+  },
   resultFailure: {
     is_error: true,
     session_id: "f1e89d14",
@@ -388,6 +400,16 @@ describe("recognizing what claude says", () => {
     strictEqual(done.ok, true);
     strictEqual(done.modelTurns, 0);
     strictEqual(done.text, "");
+  });
+
+  it("reads the origin the CLI names on a prompt it queued for itself", () => {
+    const own = only(EVENTS["resultOfATaskNotification"] as RawEvent);
+    strictEqual(own.kind, "turn-end");
+    if (own.kind !== "turn-end") return;
+    strictEqual(own.origin, "task-notification");
+
+    const ours = only(EVENTS["resultSuccess"] as RawEvent);
+    strictEqual(ours.kind === "turn-end" && ours.origin, undefined);
   });
 
   it("carries the tools a turn was never allowed to run", () => {

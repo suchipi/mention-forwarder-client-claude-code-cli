@@ -241,7 +241,7 @@ describe("driving the claude CLI", () => {
     const dir = workspace();
     const session = start({
       dir,
-      env: { CLAUDE_STUB_QUEUED_NOTIFICATION: "1" },
+      env: { CLAUDE_STUB_QUEUED_NOTIFICATION: "no-origin" },
       args: ["--no-state"],
     });
 
@@ -1281,6 +1281,28 @@ describe("driving the claude CLI", () => {
       body.indexOf("stub started something") < body.indexOf("stub finished the background thing"),
       `the late reply should follow the first one:\n${body}`,
     );
+    await session.end();
+  });
+
+  it("does not end a turn that began while the CLI was running a prompt of its own", async () => {
+    const dir = workspace();
+    const session = start({
+      dir,
+      scenario: "background",
+      env: { CLAUDE_STUB_BACKGROUND: "late-mention" },
+      args: ["--no-state", "--progress", "final"],
+    });
+
+    const first = session.send("kick something off");
+    await session.waitFor(first, "stub started something in the background");
+
+    // Lands inside the prompt the stub runs for itself, which the CLI queues
+    // behind rather than folding into.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const second = session.send("and now this");
+
+    const body = await session.waitFor(second, "stub answered turn 2");
+    doesNotMatch(body, /rate limit/);
     await session.end();
   });
 

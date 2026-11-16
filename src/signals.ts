@@ -77,6 +77,11 @@ export type Signal =
       durationMs: number | undefined;
       /** Turns the model took. Zero means the CLI never called it. */
       modelTurns: number | undefined;
+      /**
+       * Where the prompt that just ended came from. The CLI names an origin on
+       * the prompts it queues for itself and none on the ones sent from here.
+       */
+      origin: string | undefined;
     }
   /**
    * A compaction has finished: the history was summarized in place, or it could

@@ -165,6 +165,8 @@ Nothing in this program waits on background work. A turn ends when the prompt it
 
 `--progress final` posts the prose that ends a prompt, which is its answer. Prose the agent wrote before going back to work is the middle of the prompt, and that is what stays out of the thread.
 
+Which of the two a `result` ends is not guessed at: the CLI names an `origin` on the prompts it queues for itself and names none on the ones sent from here. That matters most where a mention arrives while one of its own prompts is running, which the CLI queues behind rather than folds into; without the origin that prompt's end reads as the new mention's answer, and the new mention's own answer arrives afterwards as a stray. An origin this program does not know is read as a prompt of ours, because a turn nothing will ever close costs the thread more than a late reply too many.
+
 ## Approvals and questions
 
 Permission prompts are routed to this program rather than refused by the CLI, which is what `--permission-prompt-tool stdio` does. What happens next is `--approval`:
@@ -728,7 +730,7 @@ What travels each way:
 | out       | `{"type":"user","message":{"content":[{"type":"tool_result",…}]}}`                                                      | What a tool returned.                                                                                                                                            |
 | out       | `{"type":"system","subtype":"background_tasks_changed","tasks":[…]}`                                                    | Every background task the CLI has running, listed again whenever one starts or finishes. Counted for the log and nothing else: [nothing waits on them](#when-background-work-brings-the-agent-back). |
 | out       | `{"type":"control_request","request":{"subtype":"can_use_tool",…}}`                                                     | The turn has stopped and needs a decision. `requires_user_interaction` marks the ones whose own card is the question, which in practice means `AskUserQuestion`. |
-| out       | `{"type":"result","subtype":"success",…}`                                                                               | The turn is over. Carries the last thing the model said and anything it was not allowed to run. One reporting `"num_turns":0` with nothing to say ends a prompt the CLI queued for itself, not one sent from here, and is ignored.                                                                  |
+| out       | `{"type":"result","subtype":"success",…,"origin":{"kind":…}}`                                                           | The turn is over. Carries the last thing the model said and anything it was not allowed to run. An `origin` marks a prompt the CLI queued for itself rather than one sent from here, as does `"num_turns":0` with nothing to say on a release that names no origin. |
 
 Everything on stdout is read as newline-delimited JSON; anything else is logged as a warning rather than parsed. stderr is logged and never posted.
 

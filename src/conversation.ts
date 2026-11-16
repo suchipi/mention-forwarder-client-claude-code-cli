@@ -162,6 +162,13 @@ export type ConversationDeps = {
 const STARTUP_WINDOW_MS = 15000;
 
 /**
+ * The origins the CLI names on prompts it queues for itself. It names none on a
+ * prompt sent from here, so one it names that is not in here is read as ours:
+ * a turn nothing will ever close is worse than a late reply too many.
+ */
+const OWN_PROMPT_ORIGINS: ReadonlySet<string> = new Set(["task-notification"]);
+
+/**
  * The mention again with the word that did something spent, so anything else the
  * group carried still runs as a turn of its own. The settings are written back
  * out rather than applied here, because a turn is what applies them.
@@ -568,6 +575,15 @@ export function createConversation({
   }
 
   /**
+   * The same thing again, where the CLI has said so outright rather than left it
+   * to be inferred, which is what keeps a prompt of its own from being read as
+   * the end of a turn that happens to be open while it runs.
+   */
+  function theCLIQueuedItForItself(end: TurnEnd): boolean {
+    return end.origin !== undefined && OWN_PROMPT_ORIGINS.has(end.origin);
+  }
+
+  /**
    * The prose that ended a prompt, which is its answer. Prose the agent wrote
    * before going back to work was the middle of the prompt and stays held, which
    * is the whole of what `--progress final` keeps out of the thread.
@@ -586,7 +602,35 @@ export function createConversation({
     postedProse = false;
   }
 
+  /**
+   * What the agent said on a prompt the CLI ran for itself. The thread set that
+   * work going, so what came of it belongs there too, late and as a reply of its
+   * own, rather than standing in for the answer to a turn of ours.
+   */
+  function postLateProse(end: TurnEnd, why: string): void {
+    // None of the thread's turns failed, so it is not told one did; the error is
+    // the CLI's own, and the next prompt of its own brings the agent back again.
+    if (!end.ok) {
+      log.warn("a prompt this program did not start failed", { why, error: end.error });
+      endOfPrompt();
+      return;
+    }
+
+    const words = postedProse ? "" : answerOf(end);
+    if (words === "") log.debug("a prompt this program did not start had nothing to say", { why });
+    else {
+      log.info("posting what the CLI's own prompt brought the agent back to say", { why, chars: words.length });
+      post(words, true);
+    }
+    endOfPrompt();
+  }
+
   function finishTurn(end: TurnEnd): void {
+    if (theCLIQueuedItForItself(end)) {
+      postLateProse(end, "the CLI said it had queued this prompt for itself");
+      return;
+    }
+
     const ownPrompt = endedAPromptOfItsOwn(end);
     if (turn?.compacting === true) {
       // A compaction ends in exactly that shape too, and that end is this
@@ -609,16 +653,7 @@ export function createConversation({
 
     const finished = turn;
     if (finished === undefined) {
-      // A prompt the CLI ran for itself, once a background task it was waiting
-      // on finished. The thread asked for that work, so what the agent says
-      // about it belongs there too, late and as a comment of its own.
-      const words = postedProse ? "" : answerOf(end);
-      if (words === "") log.debug("a prompt this program did not start had nothing to say");
-      else {
-        log.info("posting what background work brought the agent back to say", { chars: words.length });
-        post(words, true);
-      }
-      endOfPrompt();
+      postLateProse(end, "no turn of ours was left for this end to belong to");
       return;
     }
 
