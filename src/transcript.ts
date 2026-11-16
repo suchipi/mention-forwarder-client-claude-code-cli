@@ -108,6 +108,38 @@ function flatten(value: unknown): string {
 }
 
 /**
+ * What an attachment is worth showing. The rest are the preamble the CLI writes
+ * at the start of a session and the notes it keeps on its own running, neither
+ * of which says anything about what happened.
+ */
+function attached(at: string, attachment: Record<string, unknown>): Moment[] {
+  switch (attachment["type"]) {
+    case "queued_command": {
+      // The other mode is a task-notification: the CLI telling itself that background work finished.
+      if (attachment["commandMode"] !== "prompt") return [];
+      const said = body(flatten(attachment["prompt"]));
+      return said.text === "" ? [] : [{ at, from: "person", ...said }];
+    }
+    case "hook_blocking_error": {
+      const name = str(attachment["hookName"]) ?? "A hook";
+      const detail = str(record(attachment["blockingError"])["blockingError"]) ?? "";
+      return [{ at, from: "note", ...body(`${name} hook blocking error: ${detail}`) }];
+    }
+    case "hook_non_blocking_error": {
+      const name = str(attachment["hookName"]) ?? "A hook";
+      const detail = str(attachment["stderr"]) ?? str(attachment["stdout"]) ?? "";
+      return [{ at, from: "note", ...body(`${name} hook error: ${detail}`) }];
+    }
+    case "edited_text_file": {
+      const filename = str(attachment["filename"]);
+      return filename === undefined ? [] : [{ at, from: "note", text: `${filename} changed on disk` }];
+    }
+    default:
+      return [];
+  }
+}
+
+/**
  * What one transcript line is worth showing, which for a message is one moment
  * per content block. Lines this says nothing about are the ones a person reading
  * back cannot use: the CLI's own bookkeeping, and the preamble it writes itself.
@@ -120,14 +152,19 @@ function momentsOf(entry: Record<string, unknown>): Moment[] {
 
   if (type === "system") {
     const error = record(entry["error"]);
-    const text = str(error["formatted"]) ?? str(error["message"]);
-    if (text !== undefined) moments.push({ at, from: "note", text });
+    const said = body(str(error["formatted"]) ?? str(error["message"]) ?? str(entry["content"]) ?? "");
+    if (said.text !== "") moments.push({ at, from: "note", ...said });
+  } else if (type === "attachment") {
+    moments.push(...attached(at, record(entry["attachment"])));
   } else if ((type === "user" || type === "assistant") && entry["isMeta"] !== true) {
     const content = record(entry["message"])["content"];
+    // A task-notification is the CLI bringing the agent back on its own background work.
+    const who: Moment["from"] =
+      type === "assistant" ? "agent" : record(entry["origin"])["kind"] === "task-notification" ? "note" : "person";
 
     if (typeof content === "string") {
       const said = body(content);
-      if (said.text !== "") moments.push({ at, from: type === "user" ? "person" : "agent", ...said });
+      if (said.text !== "") moments.push({ at, from: who, ...said });
     }
 
     for (const block of list(content)) {
@@ -135,7 +172,7 @@ function momentsOf(entry: Record<string, unknown>): Moment[] {
       switch (one["type"]) {
         case "text": {
           const said = body(str(one["text"]) ?? "");
-          if (said.text !== "") moments.push({ at, from: type === "user" ? "person" : "agent", ...said });
+          if (said.text !== "") moments.push({ at, from: who, ...said });
           break;
         }
         case "thinking": {
