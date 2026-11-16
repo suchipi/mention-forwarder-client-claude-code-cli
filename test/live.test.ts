@@ -135,21 +135,61 @@ describe("the live conversation registry", () => {
     deepStrictEqual(registry.list(), []);
   });
 
-  it("lists the conversations of other processes too, oldest first", () => {
+  it("lists the conversations of other processes too, the one that last did something first", () => {
     const dir = directory();
     const registry = createLiveRegistry(dir, quiet);
-    const other = {
-      ...snapshot({ conversationKey: "slack:C1:1" }),
+    const now = Date.now();
+    const elsewhere = (key: string, ago: number) => ({
+      ...snapshot({ conversationKey: key }),
+      // Its own pid, since only a live one is listed, under another process's name.
       pid: process.pid,
       startedAt: "2020-01-01T00:00:00.000Z",
-      updatedAt: new Date().toISOString(),
-    };
-    // Its own pid, since only a live one is listed, under another process's name.
-    write(dir, "999999.json", { ...other, pid: process.pid });
+      updatedAt: new Date(now).toISOString(),
+      changedAt: new Date(now - ago).toISOString(),
+    });
+    write(dir, "999998.json", elsewhere("slack:C1:1", 60000));
+    write(dir, "999999.json", elsewhere("slack:C1:2", 1000));
     registry.publish([snapshot()]);
 
     const keys = registry.list().map((one) => one.conversationKey);
-    deepStrictEqual(keys, ["slack:C1:1", "github:acme/widgets:7"]);
+    deepStrictEqual(keys, ["github:acme/widgets:7", "slack:C1:2", "slack:C1:1"]);
+  });
+
+  it("orders an entry written before it kept that moment by when it last published", () => {
+    const dir = directory();
+    const registry = createLiveRegistry(dir, quiet);
+    const old = {
+      ...snapshot({ conversationKey: "slack:C1:1" }),
+      pid: process.pid,
+      startedAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: new Date(Date.now() - 1000).toISOString(),
+    };
+    write(dir, "999999.json", old);
+    registry.publish([snapshot()]);
+
+    const keys = registry.list().map((one) => one.conversationKey);
+    deepStrictEqual(keys, ["github:acme/widgets:7", "slack:C1:1"]);
+  });
+
+  it("moves the moment a row last changed only when something about it did", async () => {
+    const dir = directory();
+    const registry = createLiveRegistry(dir, quiet);
+    // These moments are kept to the millisecond, so a gap of one is enough to tell them apart.
+    const gap = () => new Promise((resolve) => setTimeout(resolve, 2));
+
+    registry.publish([snapshot({ turns: 1 })]);
+    const first = registry.list()[0]?.changedAt ?? "";
+    await gap();
+    registry.publish([snapshot({ turns: 1 })]);
+    const beat = registry.list()[0];
+    await gap();
+    registry.publish([snapshot({ turns: 2 })]);
+    const changed = registry.list()[0]?.changedAt ?? "";
+
+    ok(Date.parse(first) > 0, "nothing said when the row first changed");
+    strictEqual(beat?.changedAt, first, "a heartbeat was taken for a change");
+    ok(Date.parse(beat?.updatedAt ?? "") > Date.parse(first), "the heartbeat itself was not published");
+    ok(Date.parse(changed) > Date.parse(first), "a change left the row looking untouched");
   });
 
   it("drops, and deletes, an entry whose process has gone", async () => {

@@ -602,7 +602,7 @@ Forking goes through the same store as everything else, so the rules above hold:
 
 ## Seeing what is running
 
-<http://127.0.0.1:4100> lists every conversation with a process on this machine right now, and links each one back to the thread it came from. It is what was running the moment you loaded it, and says when that was; reload it to see where things have got to. There is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
+<http://127.0.0.1:4100> lists every conversation with a process on this machine right now, whichever last did something at the top, and links each one back to the thread it came from. It is what was running the moment you loaded it, and says when that was; reload it to see where things have got to. There is nothing to click but the links: it reads, and never asks the bot to do anything. Another device on the same network can open it too, at this machine's address there; [what can reach it](#what-can-reach-it) is below.
 
 One row per conversation — a process that is running a [forked review thread](#forking-a-review-thread) has a row for it as well as for the pull request it came out of — showing:
 

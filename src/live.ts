@@ -11,10 +11,16 @@ export type LiveConversation = ConversationSnapshot & {
   /** When it last published, which is how a process killed without cleanup is spotted. */
   updatedAt: string;
   /**
-   * Where this conversation comes among the ones that process is running, so a
-   * review thread is listed under the thread it was split off rather than
-   * wherever its file name happens to sort. Absent from entries written before
-   * a process could run more than one.
+   * When this conversation last did something. A process publishes a heartbeat
+   * whether or not anything has happened, so `updatedAt` cannot be read as this.
+   * Absent from entries written before it was kept.
+   */
+  changedAt?: string;
+  /**
+   * Where this conversation comes among the ones that process is running. Rows
+   * that last changed at the same moment are ordered by it, so a review thread
+   * published alongside the thread it was split off is listed under it. Absent
+   * from entries written before a process could run more than one.
    */
   index?: number;
 };
@@ -31,7 +37,7 @@ export type LiveRegistry = {
   publish(snapshots: ConversationSnapshot[]): void;
   /** Drops every entry this process wrote, on the way out. */
   remove(): void;
-  /** Every entry a live process wrote, oldest process first. */
+  /** Every entry a live process wrote, the one that last did something first. */
   list(): LiveConversation[];
 };
 
@@ -70,6 +76,8 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
   const fileFor = (index: number) => join(dir, index === 0 ? `${process.pid}.json` : `${process.pid}.${index}.json`);
   /** How many files this process has written, so one it no longer publishes is taken away rather than left to go stale. */
   let written = 0;
+  /** What each row last published and when that differed, so a heartbeat is not read as something happening. */
+  const changes: { snapshot: string; at: string }[] = [];
   let complained = false;
 
   function warnOnce(message: string, error: unknown): void {
@@ -92,7 +100,18 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
     publish(snapshots) {
       const now = new Date().toISOString();
       snapshots.forEach((snapshot, index) => {
-        const entry: LiveConversation = { ...snapshot, pid: process.pid, startedAt, updatedAt: now, index };
+        const serialized = JSON.stringify(snapshot);
+        const last = changes[index];
+        const change = last !== undefined && last.snapshot === serialized ? last : { snapshot: serialized, at: now };
+        changes[index] = change;
+        const entry: LiveConversation = {
+          ...snapshot,
+          pid: process.pid,
+          startedAt,
+          updatedAt: now,
+          changedAt: change.at,
+          index,
+        };
         const file = fileFor(index);
         // Written aside and renamed into place: whichever process serves the web
         // view reads these files, and must never catch a half-written one.
@@ -112,11 +131,13 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
       });
       for (let index = snapshots.length; index < written; index += 1) drop(fileFor(index));
       written = snapshots.length;
+      changes.length = snapshots.length;
     },
 
     remove() {
       for (let index = 0; index < Math.max(written, 1); index += 1) drop(fileFor(index));
       written = 0;
+      changes.length = 0;
     },
 
     list() {
@@ -161,7 +182,8 @@ export function createLiveRegistry(dir: string, log: Logger): LiveRegistry {
 
       return entries.sort(
         (one, other) =>
-          Date.parse(one.startedAt) - Date.parse(other.startedAt) || (one.index ?? 0) - (other.index ?? 0),
+          Date.parse(other.changedAt ?? other.updatedAt) - Date.parse(one.changedAt ?? one.updatedAt) ||
+          (one.index ?? 0) - (other.index ?? 0),
       );
     },
   };
