@@ -1392,6 +1392,46 @@ describe("driving the claude CLI", () => {
       [],
     );
   });
+
+  it("publishes the words of a mention Claude Code has not written down yet", async () => {
+    const dir = workspace();
+    const port = await freePort();
+    const session = start({
+      dir,
+      scenario: "hang",
+      args: ["--no-state", "--web-port", String(port)],
+    });
+
+    try {
+      session.send("do something that never finishes", "a");
+      // Handed to the turn already running, which Claude Code writes into the
+      // transcript only when it passes it on, and not when it takes it.
+      session.send("and look at this too", "b");
+      session.send("and at this", "c");
+      // A group this program cannot read needs a turn of its own, so these wait
+      // here rather than being sent at all.
+      session.send("[effort=turbo] first in the queue", "d");
+      session.send("[effort=warp] second in the queue", "e");
+
+      // Two of each, because the view shows them in the order they arrived in.
+      const one = await waitForRow(
+        port,
+        (row) => row.queued.length > 1 && (row.turn?.steers.length ?? 0) > 1,
+      );
+      const at = "2026-08-22T00:00:00.000Z";
+      deepStrictEqual(one.turn?.steers, [
+        { at, author: "suchipi", url: "https://example.com/issues/1#c2", text: "and look at this too" },
+        { at, author: "suchipi", url: "https://example.com/issues/1#c3", text: "and at this" },
+      ]);
+      deepStrictEqual(one.queued, [
+        { at, author: "suchipi", url: "https://example.com/issues/1#c4", text: "[effort=turbo] first in the queue" },
+        { at, author: "suchipi", url: "https://example.com/issues/1#c5", text: "[effort=warp] second in the queue" },
+      ]);
+    } finally {
+      await session.waitFor(session.send("[interrupt]", "f"), "Stopped");
+      await session.end();
+    }
+  });
 });
 
 describe("forking a review thread", () => {
@@ -1744,12 +1784,16 @@ async function freePort(): Promise<number> {
   return port;
 }
 
+type Arrival = { at: string; author: string; url: string; text: string };
+
 type Listed = {
   conversationKey: string;
   cwd: string;
   state: string;
   mentions: number;
   turns: number;
+  queued: Arrival[];
+  turn?: { steers: Arrival[] };
   thread?: { platform: string; title: string; url: string; asked: string };
 };
 
@@ -1767,19 +1811,23 @@ async function waitForJson(port: number): Promise<{ conversations: Listed[] }> {
   }
 }
 
-/** The view is published on a timer, so the first fetch can beat the first entry. */
-async function waitForConversation(port: number): Promise<Listed> {
+/** The view is published on a timer, so the first fetch can beat the entry the test is waiting for. */
+async function waitForRow(port: number, ready: (one: Listed) => boolean): Promise<Listed> {
   const deadline = Date.now() + 15000;
   for (;;) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/conversations.json`);
       const payload = (await response.json()) as { conversations: Listed[] };
       const one = payload.conversations[0];
-      if (one !== undefined && one.turns > 0) return one;
+      if (one !== undefined && ready(one)) return one;
     } catch {
       // Still coming up.
     }
-    if (Date.now() > deadline) throw new Error("the web view never listed the conversation");
+    if (Date.now() > deadline) throw new Error("the web view never listed what the test was waiting for");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+}
+
+function waitForConversation(port: number): Promise<Listed> {
+  return waitForRow(port, (one) => one.turns > 0);
 }

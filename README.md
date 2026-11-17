@@ -640,6 +640,9 @@ What it shows is Claude Code's own transcript, the `~/.claude/projects/<project>
 | A tool call            | What the call was for on one line (a command's description, or `Read` and the file), and what it was called with on a row of its own beneath: the command, the pattern, the url. Four lines of that are shown until the call is opened; opening it shows the rest, an edit as the lines it took out and put in, and what came back, marked `failed` when the tool called it an error. |
 | `subagent`             | Work a `Task` did off to the side of the thread, indented under a line, which reaches the thread only through whatever the agent makes of it. |
 | `Claude Code`          | The CLI itself: a dropped connection it retried past, and anything else it wrote down as an error.                    |
+| `steered into this turn`, `waiting for a turn of its own` | A mention that has reached the bot and is not in the transcript, shown last, in an outlined box rather than a shaded one. |
+
+Those last two are the only part of the page that is not read out of the transcript. Claude Code writes a mention down when it hands it to the model, and that can be a long way after the mention arrived: a comment [steered](#steering-a-running-turn) into a running turn waits for the CLI to take it on, and one that needs a turn of its own has not been sent to Claude Code at all. Until then the conversation's own row on the list is the only record of it, which is what these are read from, and each drops off the end of the page once the transcript has it.
 
 A block over 20,000 characters is cut there and says how much it dropped, so one read of a large file cannot become the whole page, and anything over a screenful is folded until you ask for the rest.
 

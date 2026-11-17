@@ -346,6 +346,11 @@ function name(one) {
   return started ? title + " \u00b7 " + started : title;
 }
 
+/** An older release published a count here rather than the mentions, and one of its processes can still be running. */
+function asList(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function day(iso) {
   const parsed = Date.parse(iso);
   if (!Number.isFinite(parsed)) return "";
@@ -414,7 +419,8 @@ function doing(one) {
     return "Waiting on " + what + " for " + since(one.parked.since) + ".";
   }
   if (one.turn) {
-    const steers = one.turn.steers === 0 ? "" : ", steered " + one.turn.steers + "×";
+    const steered = asList(one.turn.steers).length;
+    const steers = steered === 0 ? "" : ", steered " + steered + "×";
     return "Working for " + since(one.turn.startedAt) + steers + ".";
   }
   return "Idle. Last mention " + since(one.thread && one.thread.receivedAt ? one.thread.receivedAt : one.startedAt) + " ago.";
@@ -449,7 +455,8 @@ function card(one) {
   bits.push(
     one.turns + (one.turns === 1 ? " turn" : " turns") + " of " + one.mentions + (one.mentions === 1 ? " mention" : " mentions"),
   );
-  if (one.queued > 0) bits.push(one.queued + " queued");
+  const queued = asList(one.queued).length;
+  if (queued > 0) bits.push(queued + " queued");
   bits.push("pid " + one.pid);
   for (const bit of bits) meta.append(element("span", null, bit));
   item.append(meta);
@@ -617,6 +624,10 @@ const TRANSCRIPT_PAGE = `<!doctype html>
     cursor: pointer;
   }
   .cut { margin: .45rem 0 0; color: var(--dim); font-size: .78rem; }
+  #waiting { display: grid; gap: .75rem; }
+  #waiting:empty { display: none; }
+  /* Outlined rather than filled, so what the transcript has and what it does not read apart at a glance. */
+  .unwritten { background: none; border: 1px dashed var(--line); }
 </style>
 </head>
 <body>
@@ -626,6 +637,7 @@ const TRANSCRIPT_PAGE = `<!doctype html>
   <p class="meta" id="about"></p>
   <p class="sub" id="sub">Loading…</p>
   <div id="log"></div>
+  <div id="waiting"></div>
 </main>
 <script>
 ${ELEMENT}
@@ -634,6 +646,7 @@ const title = document.getElementById("title");
 const about = document.getElementById("about");
 const sub = document.getElementById("sub");
 const log = document.getElementById("log");
+const waiting = document.getElementById("waiting");
 
 /** Past this many characters a block is folded, because one file a tool read is longer than a screen. */
 const FOLD_CHARS = 1200;
@@ -643,6 +656,9 @@ const calls = new Map();
 
 let from = 0;
 let seen = 0;
+
+/** Every mention the transcript has, so one that has landed since is not also shown as still to come. */
+const said = [];
 
 /** Lucide's outlines, inlined because this page fetches nothing. */
 const ICONS = {
@@ -876,6 +892,37 @@ function moment(one) {
   return node;
 }
 
+/**
+ * The mentions the conversation has taken in that the transcript has not got,
+ * each with why it is not there yet. A mention is matched by its permalink,
+ * which the message the agent is given carries, and by its words on a platform
+ * that has no permalink to give.
+ */
+function unwritten(conversation) {
+  const steered = asList(conversation && conversation.turn ? conversation.turn.steers : []);
+  const queued = asList(conversation && conversation.queued ? conversation.queued : []);
+  const all = steered
+    .map(function (mention) { return { mention: mention, why: "steered into this turn" }; })
+    .concat(queued.map(function (mention) { return { mention: mention, why: "waiting for a turn of its own" }; }));
+  return all.filter(function (entry) {
+    const needle = entry.mention.url || entry.mention.text;
+    return needle !== "" && !said.some(function (words) { return words.includes(needle); });
+  });
+}
+
+function arrival(entry) {
+  const node = element("div", "moment person unwritten");
+  const who = element("p", "who");
+  who.append(
+    element("span", null, "From " + (entry.mention.author || "the thread")),
+    element("span", null, when(entry.mention.at)),
+    element("span", "tag", entry.why),
+  );
+  node.append(who);
+  if (entry.mention.text) node.append(block("prose", entry.mention.text));
+  return node;
+}
+
 /** A subagent's work is gathered under one line, apart from the thread's, since it reaches the thread only through what the agent makes of it. */
 function place(node, aside) {
   if (!aside) {
@@ -935,14 +982,17 @@ async function refresh() {
   if (payload.from === 0) {
     log.replaceChildren();
     calls.clear();
+    said.length = 0;
     seen = 0;
   }
   for (const one of payload.moments) {
+    if (one.from === "person") said.push(one.text);
     const node = moment(one);
     if (node !== undefined) place(node, one.aside);
   }
   seen += payload.moments.length;
   from = payload.next;
+  waiting.replaceChildren(...unwritten(payload.conversation).map(arrival));
 
   sub.textContent = seen === 0
     ? "Nothing in this session yet."

@@ -21,6 +21,19 @@ type Ask = Extract<Signal, { kind: "ask" }>;
 type Compacted = Extract<Signal, { kind: "compacted" }>;
 type TurnEnd = Extract<Signal, { kind: "turn-end" }>;
 
+/**
+ * One mention, as the web view has to show it when Claude Code's transcript
+ * cannot: a mention handed to a running turn is written down only when the CLI
+ * passes it on, which can be long after, and one waiting for a turn of its own
+ * was never sent at all.
+ */
+export type Arrival = {
+  at: string;
+  author: string;
+  url: string;
+  text: string;
+};
+
 /** A turn the CLI is running, and where its output goes. */
 type Turn = {
   mention: Mention;
@@ -29,8 +42,8 @@ type Turn = {
   posted: boolean;
   /** Set when somebody in the thread called this turn off, so its abrupt end is not reported as a failure. */
   interrupted: boolean;
-  /** How many mentions reached this turn while it was already running. Logged; nothing branches on it. */
-  steers: number;
+  /** The mentions that reached this turn while it was already running, oldest first. */
+  steers: Arrival[];
   /** Whether this turn is a `/compact`, which the model never sees and never answers. */
   compacting: boolean;
   /** How that compaction went, as the CLI reported it on the way to ending the turn. */
@@ -94,10 +107,10 @@ export type ConversationSnapshot = {
   effort: string | undefined;
   state: "idle" | "running" | "waiting";
   thread: Thread | undefined;
-  turn: { startedAt: string; url: string; author: string; steers: number } | undefined;
+  turn: { startedAt: string; url: string; author: string; steers: Arrival[] } | undefined;
   parked: { tool: string; isQuestion: boolean; since: string } | undefined;
-  /** Mentions waiting for a turn of their own. */
-  queued: number;
+  /** Mentions waiting for a turn of their own, oldest first. */
+  queued: Arrival[];
   /** Mentions this process has taken in, however each was spent. */
   mentions: number;
   /** Turns it has run to the end. */
@@ -687,7 +700,7 @@ export function createConversation({
       durationMs: end.durationMs,
       posted: finished.posted,
       denials: end.denials.length,
-      steers: finished.steers,
+      steers: finished.steers.length,
     });
 
     endOfPrompt();
@@ -810,7 +823,7 @@ export function createConversation({
       startedAt: new Date().toISOString(),
       posted: false,
       interrupted: false,
-      steers: 0,
+      steers: [],
       compacting,
       compacted: undefined,
     };
@@ -864,10 +877,10 @@ export function createConversation({
     const running = turn;
     if (running === undefined) return;
 
-    running.steers += 1;
+    running.steers.push({ at: mention.receivedAt, author: mention.author, url: mention.url, text: body });
     log.info("steering the running turn", {
       id: mention.id,
-      steers: running.steers,
+      steers: running.steers.length,
     });
     // Only the acknowledgement belongs to whoever steered. Moving the turn's
     // output here as well would post its answer under an unrelated comment,
@@ -1208,7 +1221,12 @@ export function createConversation({
           parked === undefined
             ? undefined
             : { tool: parked.ask.tool.name, isQuestion: parked.ask.isQuestion, since: parked.since },
-        queued: waiting.length,
+        queued: waiting.map((mention) => ({
+          at: mention.receivedAt,
+          author: mention.author,
+          url: mention.url,
+          text: say.spokenText(mention),
+        })),
         mentions,
         turns,
       };

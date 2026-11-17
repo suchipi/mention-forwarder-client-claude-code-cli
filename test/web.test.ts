@@ -40,9 +40,16 @@ const entry: LiveConversation = {
     author: "suchipi",
     receivedAt: "2026-08-22T00:00:00.000Z",
   },
-  turn: { startedAt: "2026-08-22T00:00:01.000Z", url: "https://example.com/issues/7#c1", author: "suchipi", steers: 1 },
+  turn: {
+    startedAt: "2026-08-22T00:00:01.000Z",
+    url: "https://example.com/issues/7#c1",
+    author: "suchipi",
+    steers: [{ at: "2026-08-22T00:00:02.000Z", author: "brendanlacroix", url: "https://example.com/issues/7#c2", text: "and the other one" }],
+  },
   parked: { tool: "Write", isQuestion: false, since: "2026-08-22T00:00:04.000Z" },
-  queued: 2,
+  queued: [
+    { at: "2026-08-22T00:00:03.000Z", author: "suchipi", url: "https://example.com/issues/7#c3", text: "[clear] start again" },
+  ],
   mentions: 3,
   turns: 1,
 };
